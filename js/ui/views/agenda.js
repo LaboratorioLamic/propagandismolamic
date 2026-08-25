@@ -1,0 +1,528 @@
+// ===== js/ui/views/agenda.js =====
+(function () {
+'use strict';
+
+/**
+ * Tela Agenda: visitas agrupadas por proximidade da data, com três
+ * visualizações — Cards (padrão), Semana e Mês — sobre os mesmos dados.
+ *
+ * Os mapas aqui são placeholders clicáveis, nunca auto-lazy: com 7 visitas
+ * no dia, carregar todos os iframes de uma vez é o caminho mais curto para
+ * ser bloqueado pelo Google.
+ */
+
+var html = NS.core.dom.html;
+var raw = NS.core.dom.raw;
+var delegarAcoes = NS.core.dom.delegarAcoes;
+var pluralizar = NS.core.dom.pluralizar;
+var hojeISO = NS.core.dom.hojeISO;
+var formatarData = NS.core.dom.formatarData;
+var on = NS.core.events.on;
+var EVENTOS = NS.core.events.EVENTOS;
+var icone = NS.ui.icons.icone;
+var cardVisita = NS.ui.components.card.cardVisita;
+var estadoVazio = NS.ui.components.card.estadoVazio;
+var criarMapa = NS.ui.components.mapa.criarMapa;
+var limparMapas = NS.ui.components.mapa.limparMapas;
+var renderSemana = NS.ui.components.calendario.renderSemana;
+var renderMes = NS.ui.components.calendario.renderMes;
+var ligarDragDrop = NS.ui.components.calendario.ligarDragDrop;
+var periodoSemana = NS.ui.components.calendario.periodoSemana;
+var periodoMes = NS.ui.components.calendario.periodoMes;
+var avancar = NS.ui.components.calendario.avancar;
+var rotuloPeriodo = NS.ui.components.calendario.rotuloPeriodo;
+var visitas = NS.domain.visita;
+var medicos = NS.domain.medico;
+var formatarEndereco = NS.domain.enderecoUtils.formatarEndereco;
+var abrirFormularioVisita = NS.ui.forms.visitaForm.abrirFormularioVisita;
+var abrirDetalheMedico = NS.ui.views.medicoDetalhe.abrirDetalheMedico;
+var modal = NS.ui.modal;
+var toast = NS.ui.toast;
+var abrirRegistrarVisita = NS.ui.forms.visitaAcoes.abrirRegistrarVisita;
+var abrirMarcarAusente = NS.ui.forms.visitaAcoes.abrirMarcarAusente;
+var abrirReagendar = NS.ui.forms.visitaAcoes.abrirReagendar;
+var confirmarCancelamento = NS.ui.forms.visitaAcoes.confirmarCancelamento;
+var abrirVisualizarVisita = NS.ui.forms.visitaAcoes.abrirVisualizarVisita;
+var pode = NS.domain.permissoes.pode;
+let desinscrever = [];
+let desligarDrag = null;
+let filtroSecao = '';
+let modoVisao = 'cards'; // 'cards' | 'semana' | 'mes'
+let dataRef = hojeISO();
+const secoesOcultas = new Set(); // chaves de SECOES recolhidas pelo usuário — persiste entre re-renders da view
+
+const SECOES = [
+    { chave: 'atrasadas', titulo: 'Atrasadas', modificador: 'secao--atrasadas', icone: 'alerta', corIcone: 'perigo' },
+    { chave: 'hoje', titulo: 'Hoje', modificador: '', icone: 'relogio', corIcone: 'info' },
+    { chave: 'amanha', titulo: 'Amanhã', modificador: '', icone: 'agenda', corIcone: 'roxa' },
+    { chave: 'proximas', titulo: 'Próximas', modificador: '', icone: 'setaDireita', corIcone: 'sucesso' }
+];
+
+const VISOES = [
+    { chave: 'cards', rotulo: 'Cards', icone: 'listaCards' },
+    { chave: 'semana', rotulo: 'Semana', icone: 'colunas' },
+    { chave: 'mes', rotulo: 'Mês', icone: 'grade' }
+];
+
+/* ------------------------------------------------------------------ *
+ * Visão em cards (comportamento original)
+ * ------------------------------------------------------------------ */
+
+function renderSecao({ chave, titulo, modificador }, lista, { mostrarData = true } = {}) {
+    if (!lista.length) return '';
+
+    const cards = lista.map(visita => {
+        const medico = medicos.obter(visita.medicoId);
+        return cardVisita(visita, medico, { mostrarData });
+    }).join('');
+
+    const oculta = secoesOcultas.has(chave);
+
+    return html`
+        <section class="secao ${raw(modificador)}">
+            <button type="button" class="secao__titulo" data-acao="alternarSecao" data-id="${chave}" aria-expanded="${!oculta}">
+                ${raw(icone('setaBaixo', { classe: 'secao__seta' }))}
+                ${titulo}
+                <span class="secao__contador">${lista.length}</span>
+            </button>
+            <div class="grid-cards" ${raw(oculta ? 'hidden' : '')}>${raw(cards)}</div>
+        </section>
+    `;
+}
+
+/** Injeta os placeholders de mapa nos slots dos cards já renderizados. */
+function montarMapas(container) {
+    container.querySelectorAll('.mapa-slot').forEach(slot => {
+        const medico = medicos.obter(slot.dataset.enderecoDe);
+        if (!medico) return;
+
+        const endereco = formatarEndereco(medico.endereco);
+        if (!endereco) return;
+
+        slot.appendChild(criarMapa(medico.endereco, { auto: false, rotulo: 'Ver no mapa' }));
+    });
+}
+
+function renderVisaoCards(conteudo) {
+    const grupos = visitas.agruparParaAgenda(visitas.listar());
+    const secoesFiltradas = filtroSecao ? SECOES.filter(s => s.chave === filtroSecao) : SECOES;
+
+    const temAlgo = secoesFiltradas.some(secao => grupos[secao.chave].length);
+
+    if (!temAlgo) {
+        const semMedicos = !medicos.listar().length;
+
+        conteudo.innerHTML = semMedicos
+            ? estadoVazio({
+                icone: 'medicos',
+                titulo: 'Comece cadastrando um médico',
+                texto: 'A agenda é montada a partir da sua carteira de médicos.',
+                acao: html`
+                    <a class="btn btn--primario" href="#/medicos">
+                        ${raw(icone('usuarioAdicionar'))} Ir para Médicos
+                    </a>
+                `
+            })
+            : estadoVazio({
+                icone: 'agenda',
+                titulo: filtroSecao ? 'Nada com esse filtro' : 'Agenda vazia',
+                texto: filtroSecao
+                    ? 'Nenhuma visita neste grupo. Troque o filtro para ver as demais.'
+                    : 'Agende a primeira visita para começar a acompanhar sua rotina.',
+                acao: filtroSecao || !pode('agenda.criar') ? '' : html`
+                    <button type="button" class="btn btn--primario" data-acao="nova">
+                        ${raw(icone('agendaAdicionar'))} Agendar visita
+                    </button>
+                `
+            });
+        return;
+    }
+
+    conteudo.innerHTML = secoesFiltradas
+        .map(secao => renderSecao(secao, grupos[secao.chave], {
+            mostrarData: secao.chave !== 'hoje' && secao.chave !== 'amanha'
+        }))
+        .join('');
+
+    montarMapas(conteudo);
+}
+
+/* ------------------------------------------------------------------ *
+ * Visões de calendário (Semana / Mês)
+ * ------------------------------------------------------------------ */
+
+/**
+ * Agrupa por data ISO. Só visitas agendadas aparecem no calendário — as
+ * concluídas (realizada/ausente/cancelada) ficam só no histórico do médico.
+ */
+function agruparPorDia(lista) {
+    const mapa = {};
+    for (const visita of lista) {
+        if (visita.status !== visitas.STATUS.AGENDADA) continue;
+        (mapa[visita.data] ||= []).push(visita);
+    }
+    for (const dia of Object.values(mapa)) {
+        dia.sort((a, b) => (a.horario || '99:99').localeCompare(b.horario || '99:99'));
+    }
+    return mapa;
+}
+
+function mapaMedicos() {
+    const mapa = {};
+    for (const medico of medicos.listar()) mapa[medico.id] = medico;
+    return mapa;
+}
+
+function renderVisaoCalendario(conteudo) {
+    const porDia = agruparPorDia(visitas.listar());
+    const porMedico = mapaMedicos();
+    const hojeIso = hojeISO();
+
+    const grade = modoVisao === 'semana'
+        ? renderSemana(dataRef, porDia, porMedico, { hojeIso })
+        : renderMes(dataRef, porDia, porMedico, { hojeIso });
+
+    conteudo.innerHTML = html`
+        <div class="calendario-nav">
+            <button type="button" class="btn btn--outline btn--sm calendario-nav__hoje" data-acao="periodoHoje" aria-label="Ir para hoje" title="Hoje">
+                ${raw(icone('agenda'))} <span class="calendario-nav__hoje-texto">Hoje</span>
+            </button>
+            <div class="calendario-nav__periodo">
+                <button type="button" class="btn btn--outline btn--icone btn--sm" data-acao="periodoAnterior" aria-label="Período anterior">
+                    ${raw(icone('setaEsquerda'))}
+                </button>
+                <span class="calendario-nav__rotulo">${rotuloPeriodo(dataRef, modoVisao)}</span>
+                <button type="button" class="btn btn--outline btn--icone btn--sm" data-acao="periodoSeguinte" aria-label="Próximo período">
+                    ${raw(icone('setaDireita'))}
+                </button>
+            </div>
+        </div>
+        ${raw(grade)}
+    `;
+
+    desligarDrag?.();
+    const alvoDrag = conteudo.querySelector(modoVisao === 'semana' ? '.semana' : '.mes');
+    if (alvoDrag) {
+        desligarDrag = ligarDragDrop(alvoDrag, moverVisita);
+    }
+}
+
+function moverVisita(visitaId, novaData, novoHorario) {
+    const visita = visitas.obter(visitaId);
+    if (!visita) return;
+
+    // Arrastar no calendário é reagendar: mesma permissão do botão.
+    if (!pode('agenda.reagendar')) {
+        toast.alerta('Seu grupo não permite reagendar visitas.');
+        return;
+    }
+
+    if (visita.status !== visitas.STATUS.AGENDADA) {
+        toast.alerta('Só visitas agendadas podem ser movidas no calendário.');
+        return;
+    }
+
+    const semMudanca = visita.data === novaData && (novoHorario === null || novoHorario === visita.horario);
+    if (semMudanca) return;
+
+    const patch = { data: novaData };
+    // Soltar na área "sem horário" da semana limpa o horário; nas células
+    // com hora e no mês (sem granularidade de hora) o horário existente é preservado.
+    if (novoHorario !== null) patch.horario = novoHorario;
+
+    visitas.atualizar(visitaId, patch);
+    toast.sucesso(`Movida para ${formatarData(novaData)}${patch.horario ? ' às ' + patch.horario : ''}.`);
+}
+
+/** Janela de visualização ao clicar num evento do calendário (Semana/Mês). */
+function abrirAcoesVisita(visitaId) {
+    abrirVisualizarVisita(visitaId, { aoAlterar: () => renderLista(document.getElementById('app')) });
+}
+
+/** Modal do dia (clique no número do dia ou no "+N visitas" do mês): lista o dia inteiro usando os cards normais. */
+function abrirDiaCompleto(iso) {
+    const doDia = agruparPorDia(visitas.listar())[iso] || [];
+
+    modal.abrir({
+        titulo: formatarData(iso),
+        subtitulo: doDia.length ? pluralizar(doDia.length, 'visita', 'visitas') : 'Nenhuma visita agendada',
+        largo: true,
+        corpo: doDia.length ? html`
+            <div class="grid-cards">
+                ${raw(doDia.map(v => cardVisita(v, medicos.obter(v.medicoId), { mostrarData: false })).join(''))}
+            </div>
+        ` : estadoVazio({
+            icone: 'agenda',
+            titulo: 'Nada agendado neste dia',
+            texto: 'Agende uma visita para este dia.',
+            acao: pode('agenda.criar') ? html`
+                <button type="button" class="btn btn--primario" data-acao="novaNoDia">
+                    ${raw(icone('agendaAdicionar'))} Agendar visita
+                </button>
+            ` : ''
+        }),
+        aoMontar({ corpo, fechar }) {
+            montarMapas(corpo);
+            delegarAcoes(corpo, {
+                realizar: async ({ id }) => { if (!pode('agenda.concluir')) return; fechar(); await abrirRegistrarVisita(id); },
+                editar: async ({ id }) => { if (!pode('agenda.criar')) return; fechar(); const v = visitas.obter(id); if (v) await abrirFormularioVisita({ visita: v }); },
+                ausente: async ({ id }) => { if (!pode('agenda.concluir')) return; fechar(); await abrirMarcarAusente(id); },
+                reagendar: async ({ id }) => { if (!pode('agenda.reagendar')) return; fechar(); await abrirReagendar(id); },
+                cancelar: async ({ id }) => { if (!pode('agenda.cancelar')) return; fechar(); await confirmarCancelamento(id); },
+                detalheMedico: ({ id }) => { fechar(); if (id) abrirDetalheMedico(id, {}); },
+                novaNoDia: async () => { if (!pode('agenda.criar')) return; fechar(); await abrirFormularioVisita({ rascunho: { data: iso } }); }
+            });
+        }
+    });
+}
+
+/* ------------------------------------------------------------------ *
+ * Orquestração
+ * ------------------------------------------------------------------ */
+
+function renderLista(container) {
+    const conteudo = container.querySelector('[data-conteudo]');
+    limparMapas(conteudo);
+    desligarDrag?.();
+    desligarDrag = null;
+
+    if (modoVisao === 'cards') {
+        renderVisaoCards(conteudo);
+    } else {
+        renderVisaoCalendario(conteudo);
+    }
+
+    const gruposResumo = visitas.agruparParaAgenda(visitas.listar());
+    const abertas = gruposResumo.atrasadas.length + gruposResumo.hoje.length;
+    const resumo = container.querySelector('[data-resumo]');
+    resumo.textContent = abertas
+        ? `${pluralizar(abertas, 'visita', 'visitas')} para hoje`
+        : 'Nenhuma visita pendente para hoje';
+}
+
+function atualizarBotoesVisao(container) {
+    container.querySelectorAll('[data-visao]').forEach(botao => {
+        botao.classList.toggle('segmentado__opcao--ativa', botao.dataset.visao === modoVisao);
+    });
+    container.querySelector('[data-conteudo]').classList.toggle('view-calendario', modoVisao !== 'cards');
+
+    // O filtro por grupo só faz sentido na visão Cards — Semana/Mês mostram tudo.
+    const filtroWrap = container.querySelector('[data-filtro-wrap]');
+    if (filtroWrap) filtroWrap.hidden = modoVisao !== 'cards';
+}
+
+/**
+ * Popover do filtro "Filtrar por grupo" (substitui o antigo <select>).
+ * Devolve uma função de limpeza — o listener de clique-fora em `document`
+ * precisa ser removido quando a view troca, senão acumula a cada render.
+ */
+function ligarFiltroSecao(container, opcoesSecao, aoMudar) {
+    const gatilho = container.querySelector('[data-filtro-gatilho]');
+    const popover = container.querySelector('[data-filtro-popover]');
+    const wrap = container.querySelector('.popover-filtro-wrap');
+
+    function fecharPopover() {
+        popover.hidden = true;
+        gatilho.setAttribute('aria-expanded', 'false');
+    }
+
+    function abrirPopover() {
+        popover.hidden = false;
+        gatilho.setAttribute('aria-expanded', 'true');
+    }
+
+    /** Atualiza gatilho + marcação do item ativo sem re-renderizar a barra inteira. */
+    function refletirSelecao() {
+        const secaoAtiva = opcoesSecao.find(s => s.chave === filtroSecao) || opcoesSecao[0];
+
+        gatilho.querySelector('.seletor-filtro__ponto').className = `seletor-filtro__ponto seletor-filtro__ponto--${secaoAtiva.corIcone}`;
+        gatilho.querySelector('.seletor-filtro__texto').textContent = secaoAtiva.titulo;
+
+        popover.querySelectorAll('[data-filtro-valor]').forEach(item => {
+            const ativo = item.dataset.filtroValor === filtroSecao;
+            item.classList.toggle('popover-filtro__item--ativo', ativo);
+            item.setAttribute('aria-selected', String(ativo));
+            item.querySelector('.popover-filtro__check')?.remove();
+            if (ativo) item.insertAdjacentHTML('beforeend', icone('check', { classe: 'popover-filtro__check' }));
+        });
+    }
+
+    gatilho.addEventListener('click', e => {
+        e.stopPropagation();
+        if (popover.hidden) abrirPopover(); else fecharPopover();
+    });
+
+    popover.addEventListener('click', e => {
+        e.stopPropagation();
+        const item = e.target.closest('[data-filtro-valor]');
+        if (!item) return;
+
+        filtroSecao = item.dataset.filtroValor;
+        fecharPopover();
+        refletirSelecao();
+        aoMudar();
+    });
+
+    function aoClicarFora(e) {
+        if (!popover.hidden && !wrap.contains(e.target)) fecharPopover();
+    }
+    document.addEventListener('click', aoClicarFora);
+
+    function aoTeclar(e) {
+        if (e.key === 'Escape' && !popover.hidden) fecharPopover();
+    }
+    document.addEventListener('keydown', aoTeclar);
+
+    return function destruir() {
+        document.removeEventListener('click', aoClicarFora);
+        document.removeEventListener('keydown', aoTeclar);
+    };
+}
+
+const viewAgenda = {
+    render(container) {
+        const opcoesSecao = [
+            { chave: '', titulo: 'Todos os grupos', icone: 'listaCards', corIcone: 'neutra' },
+            ...SECOES
+        ];
+        const secaoAtiva = opcoesSecao.find(s => s.chave === filtroSecao) || opcoesSecao[0];
+
+        container.innerHTML = html`
+            <div class="view-header">
+                <div class="view-header__titulo">
+                    <h1>Agenda</h1>
+                    <p data-resumo></p>
+                </div>
+                ${raw(pode('agenda.criar') ? html`
+                    <button type="button" class="btn btn--primario" data-acao="nova">
+                        ${raw(icone('agendaAdicionar'))} Agendar visita
+                    </button>
+                ` : '')}
+            </div>
+
+            <div class="barra-filtros barra-filtros--agenda">
+                <div class="segmentado" role="tablist" aria-label="Modo de visualização">
+                    ${raw(VISOES.map(v => html`
+                        <button type="button" class="segmentado__opcao" role="tab" data-visao="${v.chave}" aria-selected="${v.chave === modoVisao}">
+                            ${raw(icone(v.icone))} ${v.rotulo}
+                        </button>
+                    `).join(''))}
+                </div>
+
+                <div class="campo popover-filtro-wrap" data-filtro-wrap${raw(modoVisao !== 'cards' ? ' hidden' : '')}>
+                    <button type="button" class="seletor-filtro" data-filtro-gatilho aria-haspopup="true" aria-expanded="false">
+                        <span class="seletor-filtro__ponto seletor-filtro__ponto--${raw(secaoAtiva.corIcone)}"></span>
+                        <span class="seletor-filtro__texto">${secaoAtiva.titulo}</span>
+                        ${raw(icone('setaBaixo'))}
+                    </button>
+
+                    <div class="popover-filtro" data-filtro-popover hidden role="listbox" aria-label="Filtrar por grupo">
+                        <div class="popover-filtro__titulo">Filtrar por grupo</div>
+                        ${raw(opcoesSecao.map(s => html`
+                            <button type="button" class="popover-filtro__item${raw(s.chave === filtroSecao ? ' popover-filtro__item--ativo' : '')}" role="option" aria-selected="${s.chave === filtroSecao}" data-filtro-valor="${s.chave}">
+                                <span class="popover-filtro__icone popover-filtro__icone--${raw(s.corIcone)}">${raw(icone(s.icone))}</span>
+                                <span class="popover-filtro__nome">${s.titulo}</span>
+                                ${raw(s.chave === filtroSecao ? icone('check', { classe: 'popover-filtro__check' }) : '')}
+                            </button>
+                        `).join(''))}
+                    </div>
+                </div>
+            </div>
+
+            <div data-conteudo></div>
+        `;
+
+        renderLista(container);
+        atualizarBotoesVisao(container);
+        const destruirFiltro = ligarFiltroSecao(container, opcoesSecao, () => renderLista(container));
+        desinscrever.push(destruirFiltro);
+
+        container.querySelector('.segmentado').addEventListener('click', e => {
+            const botao = e.target.closest('[data-visao]');
+            if (!botao) return;
+            modoVisao = botao.dataset.visao;
+            if (modoVisao !== 'cards') dataRef = hojeISO();
+            renderLista(container);
+            atualizarBotoesVisao(container);
+        });
+
+        const atualizar = () => renderLista(container);
+
+        desinscrever.push(
+            on(EVENTOS.DADOS_ALTERADOS, atualizar),
+            // As checagens se repetem aqui: o markup pode ter sido renderizado
+            // antes de uma troca de permissão ou de sessão.
+            delegarAcoes(container, {
+                nova: async () => {
+                    if (!pode('agenda.criar')) return;
+                    await abrirFormularioVisita();
+                },
+                realizar: async ({ id }) => {
+                    if (!pode('agenda.concluir')) return;
+                    await abrirRegistrarVisita(id);
+                },
+                editar: async ({ id }) => {
+                    if (!pode('agenda.criar')) return;
+                    const v = visitas.obter(id);
+                    if (v) await abrirFormularioVisita({ visita: v });
+                },
+                ausente: async ({ id }) => {
+                    if (!pode('agenda.concluir')) return;
+                    await abrirMarcarAusente(id);
+                },
+                reagendar: async ({ id }) => {
+                    if (!pode('agenda.reagendar')) return;
+                    await abrirReagendar(id);
+                },
+                cancelar: async ({ id }) => {
+                    if (!pode('agenda.cancelar')) return;
+                    await confirmarCancelamento(id);
+                },
+                detalheMedico: ({ id }) => {
+                    if (id) abrirDetalheMedico(id, { aoAlterar: atualizar });
+                },
+                abrirVisita: ({ id }) => {
+                    if (id) abrirAcoesVisita(id);
+                },
+                verDia: ({ id }) => {
+                    if (id) abrirDiaCompleto(id);
+                },
+                periodoAnterior: () => {
+                    dataRef = avancar(dataRef, modoVisao, -1);
+                    renderLista(container);
+                },
+                periodoSeguinte: () => {
+                    dataRef = avancar(dataRef, modoVisao, 1);
+                    renderLista(container);
+                },
+                periodoHoje: () => {
+                    dataRef = hojeISO();
+                    renderLista(container);
+                },
+                alternarSecao: ({ id }, alvo) => {
+                    if (secoesOcultas.has(id)) secoesOcultas.delete(id);
+                    else secoesOcultas.add(id);
+
+                    const grid = alvo.closest('.secao').querySelector('.grid-cards');
+                    const expandida = !secoesOcultas.has(id);
+                    grid.hidden = !expandida;
+                    alvo.setAttribute('aria-expanded', String(expandida));
+                }
+            })
+        );
+    },
+
+    destroy() {
+        // Sem isso, cada troca de tela deixaria observers de mapa pendurados.
+        limparMapas(document.getElementById('app'));
+        desligarDrag?.();
+        desligarDrag = null;
+        desinscrever.forEach(fn => fn?.());
+        desinscrever = [];
+    }
+};
+
+NS.ui = NS.ui || {};
+NS.ui.views = NS.ui.views || {};
+NS.ui.views.agenda = { viewAgenda };
+})();

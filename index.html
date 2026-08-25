@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#2563eb">
+    <!-- Abre por duplo-clique, sem servidor: CSS via <link> (css/) e JS
+         via <script src> (js/), na ordem de dependencia (core ->
+         domain/services -> ui -> main). Scripts sao globais, sem
+         import/export; cada arquivo se publica em NS.<pasta>.<arquivo>. -->
+
+    <title>LabRuta Propagandista</title>
+    <!-- ── Base ──────────────────────────────────── -->
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/base.css">
+
+    <!-- ── Layout e componentes ──────────────────── -->
+    <link rel="stylesheet" href="css/layout.css">
+    <link rel="stylesheet" href="css/components.css">
+    <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+
+    <header class="app-header">
+        <div class="app-header__brand">
+            <span class="app-header__logo" aria-hidden="true">LR</span>
+            <div class="app-header__titulo">
+                <strong>LabRuta</strong>
+                <span id="header-usuario" class="app-header__usuario"></span>
+            </div>
+        </div>
+        <div class="app-header__acoes" id="header-acoes"></div>
+    </header>
+
+    <nav class="app-nav" id="app-nav" aria-label="Navegação principal"></nav>
+
+    <main class="app-main" id="app" tabindex="-1"></main>
+
+    <div id="modal-root"></div>
+    <div id="toast-root" class="toast-root" role="status" aria-live="polite"></div>
+    <script>var NS = window.NS || {};</script>
+
+    <!-- ── Infraestrutura ────────────────────────── -->
+    <script src="js/core/id.js"></script>
+    <script src="js/core/events.js"></script>
+    <script src="js/core/storage.js"></script>
+    <script src="js/core/sessao.js"></script>
+    <script src="js/core/dom.js"></script>
+    <script src="js/core/db.js"></script>
+    <script src="js/core/navegacao.js"></script>
+
+    <!-- ── Domínio ───────────────────────────────── -->
+    <script src="js/domain/telefone.js"></script>
+    <script src="js/domain/enderecoUtils.js"></script>
+    <script src="js/domain/config.js"></script>
+    <script src="js/domain/permissoes.js"></script>
+    <script src="js/domain/usuario.js"></script>
+    <script src="js/domain/especialidade.js"></script>
+    <script src="js/domain/objetivo.js"></script>
+    <script src="js/domain/medico.js"></script>
+    <script src="js/domain/visita.js"></script>
+    <script src="js/services/viacep.js"></script>
+    <script src="js/services/backup.js"></script>
+    <script src="js/services/dadosTeste.js"></script>
+
+    <!-- ── Interface ─────────────────────────────── -->
+    <script src="js/ui/icons.js"></script>
+    <script src="js/ui/toast.js"></script>
+    <script src="js/ui/modal.js"></script>
+    <script src="js/ui/components/formField.js"></script>
+    <script src="js/ui/components/card.js"></script>
+    <script src="js/ui/components/calendario.js"></script>
+    <script src="js/ui/components/mapa.js"></script>
+    <script src="js/ui/forms/catalogoForm.js"></script>
+    <script src="js/ui/forms/usuarioForm.js"></script>
+    <script src="js/ui/forms/grupoForm.js"></script>
+    <script src="js/ui/forms/medicoForm.js"></script>
+    <script src="js/ui/forms/visitaForm.js"></script>
+    <script src="js/ui/forms/visitaAcoes.js"></script>
+    <script src="js/ui/views/medicoDetalhe.js"></script>
+    <script src="js/ui/views/medicos.js"></script>
+    <script src="js/ui/views/agenda.js"></script>
+    <script src="js/ui/views/login.js"></script>
+    <script src="js/ui/views/config.js"></script>
+    <script src="js/ui/shell.js"></script>
+
+    <!-- ── Bootstrap ─────────────────────────────── -->
+    <script src="js/main.js"></script>
+
+</body>
+</html>
