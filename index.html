@@ -90,8 +90,14 @@
             window.__erroBoot(String((motivo && (motivo.stack || motivo.message)) || motivo));
         });
 
-        // O app nunca deve ficar mais de 30 s no spinner.
+        // Marcado pelo main.js quando o app termina de subir: depois disso o
+        // overlay pertence as acoes do usuario, e o watchdog nao opina.
+        window.__bootConcluido = function () { concluido = true; };
+        var concluido = false;
+
+        // O app nunca deve ficar mais de 30 s no spinner do boot.
         setTimeout(function () {
+            if (concluido) return;
             var raiz = document.getElementById('carregando-root');
             if (raiz && !raiz.hidden && raiz.querySelector('[data-carregando-msg]')) {
                 window.__erroBoot('O carregamento travou. Verifique a conexão e as regras do banco de dados.');
@@ -155,10 +161,15 @@
     <script src="js/ui/views/config.js?v=2026-08-25-01"></script>
     <script src="js/ui/shell.js?v=2026-08-25-01"></script>
 
+    <!-- ── Bootstrap ─────────────────────────────── -->
+    <script src="js/main.js?v=2026-08-25-01"></script>
+
     <script>
     // Diagnostico de carga: cada arquivo publica um namespace no fim. Se um
     // deles estourou, o namespace fica faltando e o culpado aparece na tela
     // com nome — em file:// o navegador so diz "Script error.".
+    // Roda DEPOIS do main.js: antes dele, NS.main ainda nao existe e a
+    // conferencia acusaria um erro que nao houve.
     (function () {
         var esperado = [
             ['js/core/versao.js', 'NS.APP_VERSION'],
@@ -221,9 +232,6 @@
             + '. O primeiro da lista e a causa.', true);
     })();
     </script>
-
-    <!-- ── Bootstrap ─────────────────────────────── -->
-    <script src="js/main.js?v=2026-08-25-01"></script>
 
 </body>
 </html>

@@ -199,6 +199,8 @@ async function iniciar() {
     else iniciarApp();
 
     carregando.boot.esconder();
+    // A partir daqui o overlay é das ações do usuário, não do boot.
+    window.__bootConcluido?.();
 }
 
 /** Falha no boot nunca pode virar spinner eterno. */
