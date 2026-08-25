@@ -13,6 +13,7 @@ var html = NS.core.dom.html;
 var raw = NS.core.dom.raw;
 var modal = NS.ui.modal;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var campoTexto = NS.ui.components.formField.campoTexto;
 var campoTextarea = NS.ui.components.formField.campoTextarea;
 var aplicarErros = NS.ui.components.formField.aplicarErros;
@@ -237,7 +238,7 @@ function abrirFormularioMedico(medicoExistente = null) {
                         : '');
                 });
 
-                form.addEventListener('submit', e => {
+                form.addEventListener('submit', async e => {
                     e.preventDefault();
                     limparErros(form);
 
@@ -249,10 +250,17 @@ function abrirFormularioMedico(medicoExistente = null) {
                         return;
                     }
 
-                    salvo = medicoExistente
-                        ? medicos.atualizar(medicoExistente.id, dados)
-                        : medicos.criar(dados);
+                    // O modal só fecha depois que o servidor confirma: sem isso
+                    // o usuário fecharia a tela achando que gravou.
+                    const resultado = await carregando.acaoRemota(
+                        () => medicoExistente
+                            ? medicos.atualizar(medicoExistente.id, dados)
+                            : medicos.criar(dados),
+                        { mensagem: 'Salvando médico…' }
+                    );
+                    if (!resultado.ok) return;
 
+                    salvo = resultado.valor;
                     toast.sucesso(medicoExistente ? 'Médico atualizado.' : 'Médico cadastrado.');
                     fechar();
                 });

@@ -221,9 +221,12 @@ function filtrarVisitas(visitas, { status = '', medicoId = '', periodo = '' } = 
 }
 
 /**
- * Agrupa para a Agenda: atrasadas, hoje, amanhã, próximas.
- * Visitas concluídas (realizada/ausente/cancelada) não aparecem aqui —
- * elas vivem só no histórico do médico.
+ * Agrupa para a Agenda: atrasadas, hoje, amanhã, próximas e concluídas.
+ *
+ * `concluidas` reúne as visitas já realizadas, independentemente da data,
+ * da mais recente para a mais antiga — é o grupo que a Agenda mostra
+ * recolhido por padrão. Ausentes e canceladas continuam fora: elas não
+ * foram concluídas e vivem no histórico do médico.
  */
 function agruparParaAgenda(visitas) {
     const hoje = hojeISO();
@@ -231,10 +234,15 @@ function agruparParaAgenda(visitas) {
         atrasadas: [],
         hoje: [],
         amanha: [],
-        proximas: []
+        proximas: [],
+        concluidas: []
     };
 
     for (const visita of visitas) {
+        if (visita.status === STATUS.REALIZADA) {
+            grupos.concluidas.push(visita);
+            continue;
+        }
         if (visita.status !== STATUS.AGENDADA) continue;
 
         const dias = diffDias(hoje, visita.data);
@@ -243,6 +251,9 @@ function agruparParaAgenda(visitas) {
         else if (dias === 1) grupos.amanha.push(visita);
         else grupos.proximas.push(visita);
     }
+
+    grupos.concluidas.sort((a, b) => (b.data || '').localeCompare(a.data || '')
+        || (b.horario || '').localeCompare(a.horario || ''));
 
     return grupos;
 }

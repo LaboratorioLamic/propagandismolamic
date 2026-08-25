@@ -19,6 +19,7 @@ var iniciais = NS.core.dom.iniciais;
 var pluralizar = NS.core.dom.pluralizar;
 var modal = NS.ui.modal;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var icone = NS.ui.icons.icone;
 var permissoes = NS.domain.permissoes;
 var db = NS.core.db;
@@ -228,7 +229,7 @@ function renderPainelGrupos(container, { aoAlterar } = {}) {
 
     /* --- Novo grupo --- */
     const formNovo = raiz.querySelector('#form-novo-grupo');
-    formNovo.addEventListener('submit', e => {
+    formNovo.addEventListener('submit', async e => {
         e.preventDefault();
 
         const campoNome = formNovo.querySelector('[name="nome"]');
@@ -242,13 +243,18 @@ function renderPainelGrupos(container, { aoAlterar } = {}) {
         }
 
         const escolhidas = lerPermissoes(formNovo.querySelector('[data-editor]'));
-        permissoes.criarGrupo(campoNome.value, escolhidas);
+        const gravacao = await carregando.acaoRemota(
+            () => permissoes.criarGrupo(campoNome.value, escolhidas),
+            { mensagem: 'Criando grupo…' }
+        );
+        if (!gravacao.ok) return;
+
         toast.sucesso('Grupo criado.');
         rerender();
     });
 
     /* --- Autocadastro --- */
-    raiz.querySelector('[data-autocadastro]').addEventListener('change', e => {
+    raiz.querySelector('[data-autocadastro]').addEventListener('change', async e => {
         const ligado = e.target.checked;
 
         if (ligado && !permissoes.grupoPadrao()) {
@@ -257,7 +263,15 @@ function renderPainelGrupos(container, { aoAlterar } = {}) {
             return;
         }
 
-        db.gravarConfig({ autocadastro: ligado });
+        const gravacao = await carregando.acaoRemota(
+            () => db.gravarConfig({ autocadastro: ligado }),
+            { mensagem: 'Salvando…' }
+        );
+        if (!gravacao.ok) {
+            e.target.checked = !ligado;
+            return;
+        }
+
         toast.sucesso(ligado ? 'Autocadastro ativado.' : 'Autocadastro desativado.');
         rerender();
     });
@@ -271,7 +285,7 @@ function renderPainelGrupos(container, { aoAlterar } = {}) {
     raiz.querySelectorAll('[data-form-grupo]').forEach(form => {
         const id = form.dataset.formGrupo;
 
-        form.addEventListener('submit', e => {
+        form.addEventListener('submit', async e => {
             e.preventDefault();
 
             const campoNome = form.querySelector('[name="nome"]');
@@ -284,25 +298,32 @@ function renderPainelGrupos(container, { aoAlterar } = {}) {
                 return;
             }
 
-            permissoes.atualizarGrupo(id, {
-                nome: campoNome.value,
-                permissoes: lerPermissoes(form.querySelector('[data-editor]'))
-            });
-
             const querPadrao = form.querySelector('[data-padrao]').checked;
             const eraPadrao = permissoes.obterGrupo(id)?.padrao;
+            let desligouAutocadastro = false;
 
-            if (querPadrao) permissoes.definirGrupoPadrao(id);
-            // Desmarcar o padrão deixa o sistema sem grupo de autocadastro:
-            // desliga o autocadastro junto, em vez de virar um botão morto.
-            else if (eraPadrao) {
-                permissoes.definirGrupoPadrao('');
-                if (db.lerConfig().autocadastro) {
-                    db.gravarConfig({ autocadastro: false });
-                    toast.alerta('Sem grupo padrão, o autocadastro foi desativado.');
+            // Nome, permissões e grupo padrão numa escrita só: o grupo nunca
+            // fica salvo pela metade para os outros usuários.
+            const gravacao = await carregando.acaoRemota(() => {
+                permissoes.atualizarGrupo(id, {
+                    nome: campoNome.value,
+                    permissoes: lerPermissoes(form.querySelector('[data-editor]'))
+                });
+
+                if (querPadrao) permissoes.definirGrupoPadrao(id);
+                // Desmarcar o padrão deixa o sistema sem grupo de autocadastro:
+                // desliga o autocadastro junto, em vez de virar um botão morto.
+                else if (eraPadrao) {
+                    permissoes.definirGrupoPadrao('');
+                    if (db.lerConfig().autocadastro) {
+                        db.gravarConfig({ autocadastro: false });
+                        desligouAutocadastro = true;
+                    }
                 }
-            }
+            }, { mensagem: 'Salvando grupo…' });
+            if (!gravacao.ok) return;
 
+            if (desligouAutocadastro) toast.alerta('Sem grupo padrão, o autocadastro foi desativado.');
             toast.sucesso('Grupo salvo.');
             rerender();
         });
@@ -324,7 +345,12 @@ function renderPainelGrupos(container, { aoAlterar } = {}) {
             });
             if (!confirmado) return;
 
-            permissoes.removerGrupo(id);
+            const gravacao = await carregando.acaoRemota(
+                () => permissoes.removerGrupo(id),
+                { mensagem: 'Excluindo grupo…' }
+            );
+            if (!gravacao.ok) return;
+
             toast.sucesso('Grupo excluído.');
             rerender();
         });

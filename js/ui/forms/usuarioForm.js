@@ -17,6 +17,7 @@ var html = NS.core.dom.html;
 var raw = NS.core.dom.raw;
 var modal = NS.ui.modal;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var icone = NS.ui.icons.icone;
 var campoTexto = NS.ui.components.formField.campoTexto;
 var campoSelect = NS.ui.components.formField.campoSelect;
@@ -179,10 +180,12 @@ function renderFormulario(container, { usuario: existente = null, aoSalvar, aoCa
         }
 
         botaoEnviar.disabled = true;
+        const fimCarregando = carregando.mostrar(existente ? 'Salvando usuário…' : 'Criando usuário…');
 
         try {
             if (existente) {
                 const resultado = await usuario.atualizar(existente.id, dados);
+                await NS.core.db.pendente();
                 if (!resultado.ok) {
                     erroGeral.textContent = resultado.motivo;
                     return;
@@ -200,11 +203,17 @@ function renderFormulario(container, { usuario: existente = null, aoSalvar, aoCa
                 aoSalvar?.(resultado.usuario);
             } else {
                 const criado = await usuario.criar(dados);
+                await NS.core.db.pendente();
                 toast.sucesso(`Usuário "${criado.nome}" cadastrado.`);
                 renderFormulario(container, { aoSalvar, aoCancelar });
                 aoSalvar?.(criado);
             }
+        } catch (erro) {
+            erroGeral.textContent = erro?.name === 'ErroSemConexao'
+                ? 'Sem conexão com o servidor. Nada foi salvo.'
+                : 'Não foi possível salvar. Tente novamente.';
         } finally {
+            fimCarregando();
             botaoEnviar.disabled = false;
         }
     });

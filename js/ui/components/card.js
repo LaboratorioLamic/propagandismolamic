@@ -20,6 +20,7 @@ var TAG_STATUS = NS.domain.visita.TAG_STATUS;
 var nomeObjetivo = NS.domain.objetivo.nomeDe;
 var especialidades = NS.domain.especialidade;
 var estaAtrasada = NS.domain.visita.estaAtrasada;
+var ehTerminal = NS.domain.visita.ehTerminal;
 var horarioFim = NS.domain.visita.horarioFim;
 var pode = NS.domain.permissoes.pode;
 /**
@@ -161,10 +162,22 @@ function acoesDaVisita(visita, medico) {
         `;
     }
 
+    // Encerrada (concluída, ausente ou cancelada): segue gerenciável — dá para
+    // corrigir os dados do registro ou apagá-lo do histórico.
     return html`
         <button type="button" class="btn btn--sutil btn--sm btn--cresce" data-acao="detalheMedico" data-id="${medico?.id || ''}">
             ${raw(icone('info'))} Ver médico
         </button>
+        ${raw(ehTerminal(visita.status) && pode('agenda.criar') ? html`
+            <button type="button" class="btn btn--sutil btn--sm" data-acao="editar" data-id="${visita.id}" title="Gerenciar" aria-label="Gerenciar visita">
+                ${raw(icone('editar'))}
+            </button>
+        ` : '')}
+        ${raw(ehTerminal(visita.status) && pode('agenda.cancelar') ? html`
+            <button type="button" class="btn btn--sutil btn--sm" data-acao="excluir" data-id="${visita.id}" title="Excluir" aria-label="Excluir visita">
+                ${raw(icone('excluir'))}
+            </button>
+        ` : '')}
     `;
 }
 

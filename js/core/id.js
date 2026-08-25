@@ -23,6 +23,7 @@ const PREFIXOS = {
     visitas: 'vis',
     especialidades: 'esp',
     objetivos: 'obj',
+    motivosAusencia: 'mot',
     usuarios: 'usr',
     grupos: 'grp'
 };

@@ -3,7 +3,11 @@
 'use strict';
 
 /**
- * Bootstrap: storage -> sessão -> (login | shell + navegação).
+ * Bootstrap: Firebase -> base -> sessão -> (login | shell + navegação).
+ *
+ * Nada é renderizado antes do primeiro snapshot do banco: o overlay de
+ * carregamento cobre a tela desde o primeiro frame (ele vem estático no
+ * index.html) e só sai com o app montado ou com a tela de erro.
  *
  * A decisão de acesso acontece antes de montar o shell: sem sessão, nada do
  * app é renderizado — nem header, nem nav, nem rota. É aqui também que mora a
@@ -14,13 +18,19 @@
 var html = NS.core.dom.html;
 var raw = NS.core.dom.raw;
 var db = NS.core.db;
-var aoFalharGravacao = NS.core.storage.aoFalharGravacao;
 var sessao = NS.core.sessao;
 var navegacao = NS.core.navegacao;
 var permissoes = NS.domain.permissoes;
 var usuario = NS.domain.usuario;
 var iniciarShell = NS.ui.shell.iniciarShell;
 var toast = NS.ui.toast;
+var modal = NS.ui.modal;
+var carregando = NS.ui.carregando;
+var firebase = NS.core.firebase;
+var migracaoLocal = NS.core.migracaoLocal;
+var conexaoBanner = NS.ui.conexaoBanner;
+var on = NS.core.events.on;
+var EVENTOS = NS.core.events.EVENTOS;
 var icone = NS.ui.icons.icone;
 var viewLogin = NS.ui.views.login;
 var viewAgenda = NS.ui.views.agenda.viewAgenda;
@@ -110,31 +120,102 @@ function mostrarLogin() {
     viewLogin.render(app, { aoEntrar: iniciarApp });
 }
 
-function iniciar() {
-    const estado = db.iniciar();
+/** Um app desatualizado não pode gravar no formato antigo. */
+function versaoObsoleta(minima) {
+    return !!minima && String(minima) > String(NS.APP_VERSION || '');
+}
 
-    aoFalharGravacao(mensagem => toast.erro(mensagem, 8000));
+/**
+ * Derruba a sessão quando a conta some ou é desativada em outra máquina —
+ * agora que a base é compartilhada, isso acontece enquanto o app está aberto.
+ */
+function vigiarSessao() {
+    on(EVENTOS.DADOS_ALTERADOS, () => {
+        if (!sessao.estaAutenticado() || usuario.atual()) return;
+
+        modal.fecharTodos();
+        sessao.encerrar();
+        toast.alerta('Seu acesso foi alterado por um administrador. Entre novamente.', 8000);
+        mostrarLogin();
+    });
+}
+
+async function iniciar() {
+    carregando.boot.mostrar('Conectando ao servidor…');
+
+    try {
+        firebase.iniciar();
+    } catch {
+        carregando.boot.erro({
+            titulo: 'Não foi possível carregar o sistema',
+            mensagem: 'Os arquivos do Firebase não foram encontrados. Baixe a pasta do app novamente.'
+        });
+        return;
+    }
+
+    carregando.boot.texto('Carregando dados…');
+
+    let estado;
+    try {
+        estado = await carregando.comTimeout(db.iniciar(), 20000);
+    } catch (erro) {
+        const texto = String(erro?.message || erro || '');
+        // Regras do Realtime Database ainda fechadas é o erro de instalação
+        // mais comum — dizer isso poupa uma hora de caça ao fantasma.
+        const semPermissao = /permission|denied/i.test(texto);
+
+        carregando.boot.erro({
+            titulo: semPermissao ? 'O banco de dados recusou o acesso' : 'Sem conexão com o banco de dados',
+            mensagem: semPermissao
+                ? 'Publique as regras do arquivo database.rules.json no console do Firebase (Realtime Database › Regras) e recarregue.'
+                : `Verifique sua internet e tente de novo. Este app não funciona offline. (${texto || 'tempo esgotado'})`
+        });
+        return;
+    }
+
+    if (versaoObsoleta(estado.versaoMinima)) {
+        carregando.boot.erro({
+            titulo: 'Nova versão disponível',
+            mensagem: 'Este computador está com uma versão antiga do sistema. Atualize a pasta do app e recarregue.'
+        });
+        return;
+    }
+
+    // Base na nuvem ainda vazia e dados presos no navegador: oferta única.
+    if (estado.baseVazia && migracaoLocal.temDadosLocais()) {
+        carregando.boot.esconder();
+        await migracaoLocal.oferecerUpload();
+        carregando.boot.mostrar('Carregando dados…');
+    }
+
     sessao.iniciar();
-
-    if (estado.corrompido) {
-        toast.erro('Os dados salvos estavam corrompidos. Uma cópia foi preservada e o app iniciou vazio.', 9000);
-    }
-
-    if (estado.semPersistencia) {
-        toast.alerta('Este navegador bloqueou o armazenamento local. Os dados não serão salvos.', 9000);
-    }
+    conexaoBanner.iniciar();
 
     // Sessão apontando para um usuário apagado ou desativado não vale nada.
     if (sessao.estaAutenticado() && !usuario.atual()) sessao.encerrar();
+    vigiarSessao();
 
     if (usuario.precisaPrimeiroAdmin() || !sessao.estaAutenticado()) mostrarLogin();
     else iniciarApp();
+
+    carregando.boot.esconder();
+}
+
+/** Falha no boot nunca pode virar spinner eterno. */
+function iniciarProtegido() {
+    Promise.resolve()
+        .then(iniciar)
+        .catch(erro => {
+            const detalhe = erro?.stack || erro?.message || String(erro);
+            if (window.__erroBoot) window.__erroBoot(detalhe);
+            else console.error(erro);
+        });
 }
 
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', iniciar);
+    document.addEventListener('DOMContentLoaded', iniciarProtegido);
 } else {
-    iniciar();
+    iniciarProtegido();
 }
 
 NS.main = { iniciarApp, mostrarLogin };

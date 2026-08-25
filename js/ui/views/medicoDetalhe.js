@@ -29,6 +29,11 @@ var abrirFormularioMedico = NS.ui.forms.medicoForm.abrirFormularioMedico;
 var abrirFormularioVisita = NS.ui.forms.visitaForm.abrirFormularioVisita;
 var abrirVisualizarVisita = NS.ui.forms.visitaAcoes.abrirVisualizarVisita;
 var pode = NS.domain.permissoes.pode;
+var carregando = NS.ui.carregando;
+// Carteira antiga rende históricos longos: pagina em blocos para o modal
+// não virar uma parede de registros.
+const POR_PAGINA_HISTORICO = 10;
+
 function linhaContato(rotulo, valor, acao) {
     if (!valor) return '';
     return html`
@@ -100,30 +105,31 @@ function abrirDetalheMedico(medicoId, { aoAlterar } = {}) {
                 ${raw(historico.length ? html`
                     <div class="detalhe__grupo">
                         <span class="detalhe__rotulo">Histórico</span>
-                        <div class="historico">
-                            ${raw(historico.slice(0, 8).map(itemHistorico).join(''))}
-                        </div>
+                        <div class="historico" data-historico></div>
+                        <div class="historico__paginacao" data-historico-paginacao></div>
                     </div>
                 ` : '')}
 
-                <div class="form__acoes">
-                    ${raw(pode('medicos.editar') ? html`
-                        <button type="button" class="btn btn--outline" data-acao="editar">
-                            ${raw(icone('editar'))} Editar
-                        </button>
-                    ` : '')}
-                    ${raw(pode('agenda.criar') ? html`
-                        <button type="button" class="btn btn--primario" data-acao="agendar">
-                            ${raw(icone('agendaAdicionar'))} Agendar visita
+                <div class="detalhe__rodape">
+                    <div class="form__acoes">
+                        ${raw(pode('medicos.editar') ? html`
+                            <button type="button" class="btn btn--outline" data-acao="editar">
+                                ${raw(icone('editar'))} Editar
+                            </button>
+                        ` : '')}
+                        ${raw(pode('agenda.criar') ? html`
+                            <button type="button" class="btn btn--primario" data-acao="agendar">
+                                ${raw(icone('agendaAdicionar'))} Agendar visita
+                            </button>
+                        ` : '')}
+                    </div>
+
+                    ${raw(pode('medicos.excluir') ? html`
+                        <button type="button" class="btn btn--perigo btn--bloco btn--sm" data-acao="excluir">
+                            ${raw(icone('excluir'))} Excluir cadastro
                         </button>
                     ` : '')}
                 </div>
-
-                ${raw(pode('medicos.excluir') ? html`
-                    <button type="button" class="btn btn--perigo btn--bloco btn--sm" data-acao="excluir">
-                        ${raw(icone('excluir'))} Excluir cadastro
-                    </button>
-                ` : '')}
             </div>
         `,
 
@@ -134,10 +140,45 @@ function abrirDetalheMedico(medicoId, { aoAlterar } = {}) {
             const slot = corpo.querySelector('[data-slot-mapa]');
             if (enderecoTexto) slot.appendChild(criarMapa(medico.endereco, { auto: true }));
 
+            const slotHistorico = corpo.querySelector('[data-historico]');
+            const slotPaginacao = corpo.querySelector('[data-historico-paginacao]');
+            const totalPaginas = Math.max(1, Math.ceil(historico.length / POR_PAGINA_HISTORICO));
+            let paginaHistorico = 1;
+
+            function renderHistorico() {
+                if (!slotHistorico) return;
+
+                const inicio = (paginaHistorico - 1) * POR_PAGINA_HISTORICO;
+                slotHistorico.innerHTML = historico
+                    .slice(inicio, inicio + POR_PAGINA_HISTORICO)
+                    .map(itemHistorico)
+                    .join('');
+
+                slotPaginacao.innerHTML = totalPaginas <= 1 ? '' : html`
+                    <button type="button" class="btn btn--outline btn--icone btn--sm" data-acao="paginaHistorico" data-id="${paginaHistorico - 1}"
+                        aria-label="Página anterior"${raw(paginaHistorico <= 1 ? ' disabled' : '')}>
+                        ${raw(icone('setaEsquerda'))}
+                    </button>
+                    <span class="historico__paginacao-info">Página ${paginaHistorico} de ${totalPaginas} · ${pluralizar(historico.length, 'visita', 'visitas')}</span>
+                    <button type="button" class="btn btn--outline btn--icone btn--sm" data-acao="paginaHistorico" data-id="${paginaHistorico + 1}"
+                        aria-label="Próxima página"${raw(paginaHistorico >= totalPaginas ? ' disabled' : '')}>
+                        ${raw(icone('setaDireita'))}
+                    </button>
+                `;
+            }
+
+            renderHistorico();
+
             // Histórico é interativo: clicar num item abre a janela de visualização da visita.
             delegarAcoes(corpo, {
                 abrirVisita: ({ id }) => {
                     if (id) abrirVisualizarVisita(id, { aoAlterar });
+                },
+                paginaHistorico: ({ id }) => {
+                    const alvo = Number(id);
+                    if (!Number.isFinite(alvo) || alvo < 1 || alvo > totalPaginas) return;
+                    paginaHistorico = alvo;
+                    renderHistorico();
                 }
             });
 
@@ -186,8 +227,16 @@ function abrirDetalheMedico(medicoId, { aoAlterar } = {}) {
 
                 if (!confirmado) return;
 
-                historico.forEach(v => visitas.remover(v.id));
-                medicos.remover(medicoId);
+                // Uma transação só: nenhum outro usuário pode ver o médico
+                // apagado com as visitas ainda de pé, ou vice-versa.
+                const resultado = await carregando.acaoRemota(
+                    () => NS.core.db.transacao(banco => {
+                        banco.visitas = banco.visitas.filter(v => v.medicoId !== medicoId);
+                        banco.medicos = banco.medicos.filter(m => m.id !== medicoId);
+                    }),
+                    { mensagem: 'Excluindo médico…' }
+                );
+                if (!resultado.ok) return;
 
                 toast.sucesso('Médico excluído.');
                 fechar();

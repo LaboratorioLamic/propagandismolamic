@@ -15,7 +15,8 @@ var novoId = NS.core.id.novoId;
 var PREFIXOS = NS.core.id.PREFIXOS;
 var storage = NS.core.storage;
 var STATUS = NS.domain.visita.STATUS;
-var MOTIVOS_AUSENCIA = NS.domain.visita.MOTIVOS_AUSENCIA;
+var MOTIVOS_PADRAO = NS.core.storage.MOTIVOS_PADRAO;
+var DURACAO_PADRAO = NS.domain.visita.DURACAO_PADRAO;
 const MEDICOS_EXEMPLO = [
     { nome: 'Dra. Ana Souza', crm: 'CRM/SP 111111', especialidade: 'Ginecologia', cidade: 'São Paulo', estado: 'SP', bairro: 'Pinheiros', rua: 'Rua dos Pinheiros', numero: '500' },
     { nome: 'Dr. Bruno Lima', crm: 'CRM/SP 222222', especialidade: 'Urologia', cidade: 'São Paulo', estado: 'SP', bairro: 'Moema', rua: 'Av. Ibirapuera', numero: '1200' },
@@ -73,6 +74,7 @@ function visita({ medicoId, diasOffset, horario, status, objetivo, notas = '', m
         status,
         data: isoComOffset(diasOffset),
         horario,
+        duracao: DURACAO_PADRAO,
         objetivo,
         notas,
         motivoAusencia,
@@ -128,7 +130,7 @@ function gerar() {
     // Histórico: concluídas e uma ausência, nos dias anteriores.
     visitas.push(visita({ medicoId: porId(4), diasOffset: -3, horario: '11:00', status: STATUS.REALIZADA, objetivo: amostra(OBJETIVOS_LISTA, 0), notas: 'Demonstrou interesse no novo painel de exames.' }));
     visitas.push(visita({ medicoId: porId(5), diasOffset: -5, horario: '14:00', status: STATUS.REALIZADA, objetivo: amostra(OBJETIVOS_LISTA, 1), notas: 'Pediu retorno em 30 dias.' }));
-    visitas.push(visita({ medicoId: porId(6), diasOffset: -2, horario: '16:00', status: STATUS.AUSENTE, objetivo: amostra(OBJETIVOS_LISTA, 2), motivoAusencia: amostra(MOTIVOS_AUSENCIA, 0) }));
+    visitas.push(visita({ medicoId: porId(6), diasOffset: -2, horario: '16:00', status: STATUS.AUSENTE, objetivo: amostra(OBJETIVOS_LISTA, 2), motivoAusencia: amostra(MOTIVOS_PADRAO, 0).nome }));
     visitas.push(visita({ medicoId: porId(7), diasOffset: -8, horario: '10:00', status: STATUS.CANCELADA, objetivo: amostra(OBJETIVOS_LISTA, 0) }));
 
     return {
@@ -136,6 +138,7 @@ function gerar() {
         visitas,
         especialidades,
         objetivos: OBJETIVOS_EXEMPLO,
+        motivosAusencia: MOTIVOS_PADRAO.map(m => ({ ...m })),
         config: {}
     };
 }

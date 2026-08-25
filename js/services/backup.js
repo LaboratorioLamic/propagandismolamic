@@ -8,6 +8,11 @@
  * A importação substitui tudo — merge por id é ambíguo em conflito e fica
  * fora da Onda 1. Antes de gravar, o estado atual vai para um snapshot,
  * permitindo desfazer.
+ *
+ * O snapshot mora no servidor (`/snapshots/preImport`), não no navegador:
+ * a base é compartilhada, então quem precisa desfazer pode não ser quem
+ * importou. Por isso `importar`, `limparTudo` e `desfazerImportacao` são
+ * assíncronas — quem chama já está dentro de `carregando.acaoRemota`.
  */
 
 var db = NS.core.db;
@@ -49,6 +54,7 @@ function exportar() {
         visitas: visitas.length,
         especialidades: (conteudo.dados.especialidades || []).length,
         objetivos: (conteudo.dados.objetivos || []).length,
+        motivosAusencia: (conteudo.dados.motivosAusencia || []).length,
         usuarios: (conteudo.dados.usuarios || []).length
     };
 }
@@ -116,6 +122,18 @@ function validarBackup(texto) {
         });
     if (!objetivosValidosLista.length) objetivosValidosLista = storage.dbVazio().objetivos;
     const idsObjetivos = new Set(objetivosValidosLista.map(o => o.id));
+
+    // Motivos de ausência: catálogo a partir da v4. Backup mais antigo cai
+    // nos motivos de fábrica — as visitas guardam o texto, então nada se perde.
+    let motivosValidosLista = (Array.isArray(dados.motivosAusencia) ? dados.motivosAusencia : [])
+        .filter((motivo, indice) => {
+            if (!motivo?.id || !motivo?.nome) {
+                avisos.push(`Motivo na posição ${indice + 1} ignorado: sem id ou nome.`);
+                return false;
+            }
+            return true;
+        });
+    if (!motivosValidosLista.length) motivosValidosLista = storage.dbVazio().motivosAusencia;
 
     // Médicos: precisam de id e nome.
     const medicosValidos = [];
@@ -227,6 +245,7 @@ function validarBackup(texto) {
             visitas: visitasValidas,
             especialidades: especialidadesValidas,
             objetivos: objetivosValidosLista,
+            motivosAusencia: motivosValidosLista,
             ...(importarContas ? { usuarios: usuariosValidos, grupos: gruposValidos } : {}),
             // Sem trazer as contas, também não faz sentido trazer as opções que
             // dependem delas: `grupoPadraoId` apontaria para um grupo ausente.
@@ -245,7 +264,7 @@ function validarBackup(texto) {
 
 /** Aplica um backup já validado, guardando o estado anterior. */
 function importar(dados) {
-    storage.salvarSnapshotPreImport(db.bancoBruto());
+    db.salvarSnapshotPreImport();
     db.substituirTudo(dados);
     return true;
 }
@@ -256,14 +275,15 @@ function importar(dados) {
  * faz `substituirTudo` preservá-las.
  */
 function limparTudo() {
-    storage.salvarSnapshotPreImport(db.bancoBruto());
-    db.substituirTudo({ medicos: [], visitas: [], especialidades: [], objetivos: db.exportarDados().objetivos });
+    db.salvarSnapshotPreImport();
+    const atuais = db.exportarDados();
+    db.substituirTudo({ medicos: [], visitas: [], especialidades: [], objetivos: atuais.objetivos, motivosAusencia: atuais.motivosAusencia });
     return true;
 }
 
 /** Desfaz a última importação, contas e grupos inclusive. */
-function desfazerImportacao() {
-    const anterior = storage.lerSnapshotPreImport();
+async function desfazerImportacao() {
+    const anterior = await db.lerSnapshotPreImport();
     if (!anterior) return false;
 
     // Mesma trava da importação: um snapshot sem administrador ativo (por
@@ -276,6 +296,7 @@ function desfazerImportacao() {
         visitas: anterior.visitas,
         especialidades: anterior.especialidades,
         objetivos: anterior.objetivos,
+        motivosAusencia: anterior.motivosAusencia,
         ...(restaurarContas ? { usuarios: contas, grupos: anterior.grupos } : {}),
         config: anterior.config
     });

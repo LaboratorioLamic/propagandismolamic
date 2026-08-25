@@ -3,27 +3,38 @@
 'use strict';
 
 /**
- * Persistência em localStorage.
+ * Forma e evolução da base — não mais a persistência.
  *
- * Um blob JSON único sob `labruta.db`. O app é single-user com dezenas/centenas
- * de registros — particionar por coleção só criaria risco de inconsistência.
+ * Os dados vivem no Firebase Realtime Database (`js/core/firebase.js`);
+ * este módulo define a ESTRUTURA (`dbVazio`), os dados de fábrica e as
+ * MIGRATIONS que levam uma base antiga até `VERSAO_ATUAL`.
  *
- * O mecanismo de MIGRATIONS é o que destrava as Ondas 2 e 3: ao adicionar
- * `produtos`, `campanhas` ou novos campos, registra-se uma migration nova
- * e as bases existentes se atualizam sozinhas no próximo load.
+ * `migrar`/`normalizar` operam no formato-array (o mesmo que `db.listar`
+ * devolve), então servem tanto para a base remota quanto para um arquivo
+ * de backup ou um resto de localStorage vindo da versão anterior.
+ *
+ * Ao adicionar `produtos`, `campanhas` ou novos campos, registra-se uma
+ * migration nova e as bases existentes se atualizam sozinhas no próximo
+ * boot — a primeira aba que subir com o código novo faz a conversão.
  */
 
-const CHAVE = 'labruta.db';
-const CHAVE_CORROMPIDO = 'labruta.db.backup-corrompido';
-const CHAVE_PRE_IMPORT = 'labruta.db.pre-import';
-
-const VERSAO_ATUAL = 3;
+const VERSAO_ATUAL = 4;
 
 /** IDs de fábrica para os objetivos padrão — usados pela migration v2 e pelas seeds. */
 const OBJETIVOS_PADRAO = [
     { id: 'obj_fortalecer_relacionamento', nome: 'Fortalecer relacionamento' },
     { id: 'obj_consolidar_parceria', nome: 'Consolidar parceria' },
     { id: 'obj_prospectar_novo', nome: 'Prospectar novo' }
+];
+
+/** Motivos de ausência de fábrica — catálogo editável a partir da v4. */
+const MOTIVOS_PADRAO = [
+    { id: 'mot_em_atendimento', nome: 'Médico em atendimento' },
+    { id: 'mot_fora_consultorio', nome: 'Médico não estava no consultório' },
+    { id: 'mot_agenda_cheia', nome: 'Agenda cheia no dia' },
+    { id: 'mot_consultorio_fechado', nome: 'Consultório fechado' },
+    { id: 'mot_remarcado_secretaria', nome: 'Remarcado pela secretária' },
+    { id: 'mot_outro', nome: 'Outro motivo' }
 ];
 
 /**
@@ -73,6 +84,7 @@ function dbVazio() {
         visitas: [],
         especialidades: [],
         objetivos: OBJETIVOS_PADRAO.map(o => ({ ...o })),
+        motivosAusencia: MOTIVOS_PADRAO.map(m => ({ ...m })),
         usuarios: [],
         grupos: gruposPadrao(),
         config: { nomeUsuario: '', autocadastro: false, grupoPadraoId: 'grp_propagandista' },
@@ -141,6 +153,17 @@ const MIGRATIONS = {
         db.usuarios = [];
         db.grupos = gruposPadrao();
         db.config = { ...db.config, autocadastro: false, grupoPadraoId: 'grp_propagandista' };
+    },
+
+    /**
+     * Motivos de ausência viram catálogo editável.
+     *
+     * As visitas continuam guardando o texto do motivo, não um id: o valor
+     * já gravado é livre (o formulário sempre aceitou observação própria) e
+     * renomear um motivo não pode reescrever o histórico.
+     */
+    4(db) {
+        db.motivosAusencia = MOTIVOS_PADRAO.map(m => ({ ...m }));
     }
 };
 
@@ -170,6 +193,7 @@ function normalizar(bruto) {
         visitas: Array.isArray(bruto.visitas) ? bruto.visitas : [],
         especialidades: Array.isArray(bruto.especialidades) ? bruto.especialidades : [],
         objetivos: Array.isArray(bruto.objetivos) ? bruto.objetivos : [],
+        motivosAusencia: Array.isArray(bruto.motivosAusencia) ? bruto.motivosAusencia : [],
         usuarios: Array.isArray(bruto.usuarios) ? bruto.usuarios : [],
         grupos: Array.isArray(bruto.grupos) ? bruto.grupos : [],
         config: { ...base.config, ...(bruto.config || {}) },
@@ -177,92 +201,6 @@ function normalizar(bruto) {
     };
 }
 
-/**
- * Lê o banco. Se o conteúdo estiver corrompido, preserva o bruto em
- * `labruta.db.backup-corrompido` antes de devolver um banco vazio —
- * nunca descarta dados em silêncio.
- */
-function carregar() {
-    let bruto;
-
-    try {
-        bruto = localStorage.getItem(CHAVE);
-    } catch {
-        // localStorage indisponível (modo privado restrito): opera em memória.
-        return { db: dbVazio(), corrompido: false, semPersistencia: true };
-    }
-
-    if (!bruto) return { db: dbVazio(), corrompido: false };
-
-    try {
-        return { db: migrar(normalizar(JSON.parse(bruto))), corrompido: false };
-    } catch {
-        try {
-            localStorage.setItem(CHAVE_CORROMPIDO, bruto);
-        } catch { /* sem espaço para o backup: segue com o banco vazio */ }
-        return { db: dbVazio(), corrompido: true };
-    }
-}
-
-let timerGravacao = null;
-let ouvinteQuota = null;
-
-/** Registra quem deve ser avisado quando a gravação falhar. */
-function aoFalharGravacao(callback) {
-    ouvinteQuota = callback;
-}
-
-function gravar(db) {
-    try {
-        localStorage.setItem(CHAVE, JSON.stringify(db));
-        return true;
-    } catch (erro) {
-        const semEspaco = erro && (erro.name === 'QuotaExceededError' || erro.code === 22);
-        ouvinteQuota?.(semEspaco
-            ? 'Armazenamento cheio. Exporte um backup e remova registros antigos.'
-            : 'Não foi possível salvar os dados neste navegador.');
-        return false;
-    }
-}
-
-/** Grava com debounce — evita stringify a cada tecla em formulários. */
-function salvar(db, { imediato = false } = {}) {
-    db.atualizadoEm = new Date().toISOString();
-
-    if (imediato) {
-        clearTimeout(timerGravacao);
-        timerGravacao = null;
-        return gravar(db);
-    }
-
-    clearTimeout(timerGravacao);
-    timerGravacao = setTimeout(() => {
-        timerGravacao = null;
-        gravar(db);
-    }, 150);
-
-    return true;
-}
-
-/** Guarda o estado atual antes de uma importação, permitindo desfazer. */
-function salvarSnapshotPreImport(db) {
-    try {
-        localStorage.setItem(CHAVE_PRE_IMPORT, JSON.stringify(db));
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-function lerSnapshotPreImport() {
-    try {
-        const bruto = localStorage.getItem(CHAVE_PRE_IMPORT);
-        return bruto ? migrar(normalizar(JSON.parse(bruto))) : null;
-    } catch {
-        return null;
-    }
-}
-
 NS.core = NS.core || {};
-NS.core.storage = { CHAVE, CHAVE_CORROMPIDO, CHAVE_PRE_IMPORT, PERMISSOES_CONHECIDAS, VERSAO_ATUAL, aoFalharGravacao, carregar, dbVazio, gruposPadrao, lerSnapshotPreImport, migrar, salvar, salvarSnapshotPreImport };
+NS.core.storage = { MOTIVOS_PADRAO, OBJETIVOS_PADRAO, PERMISSOES_CONHECIDAS, VERSAO_ATUAL, dbVazio, gruposPadrao, migrar, normalizar };
 })();

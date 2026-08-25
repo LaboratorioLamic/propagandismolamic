@@ -21,6 +21,7 @@ var on = NS.core.events.on;
 var EVENTOS = NS.core.events.EVENTOS;
 var modal = NS.ui.modal;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var icone = NS.ui.icons.icone;
 var campoTexto = NS.ui.components.formField.campoTexto;
 var campoSenha = NS.ui.components.formField.campoSenha;
@@ -176,8 +177,9 @@ function markupAbaBackup() {
                 <article class="card">
                     <div class="card__nome">Backup</div>
                     <p class="card__sub">
-                        Os dados ficam salvos apenas neste navegador. Limpar o histórico
-                        ou trocar de computador apaga tudo — exporte com frequência.
+                        Os dados ficam no servidor e são os mesmos para toda a equipe.
+                        O backup é a sua rede de proteção contra exclusões acidentais —
+                        exporte com frequência.
                     </p>
 
                     <div class="card__bloco">
@@ -244,9 +246,9 @@ function markupAbaBackup() {
                     continua funcionando com preenchimento manual.
                 </div>
                 <div class="card__nota">
-                    O login organiza o acesso entre as pessoas que usam este computador.
-                    Como tudo fica no navegador, ele não protege os dados de quem tenha
-                    acesso direto ao arquivo.
+                    O login organiza o acesso entre as pessoas da equipe. Os dados ficam
+                    num banco compartilhado, sem senha própria de servidor — mantenha a
+                    pasta do app e o endereço do banco só com quem deve usá-los.
                 </div>
             </article>
         </div>
@@ -307,7 +309,19 @@ function abrirTrocarSenha() {
                     return;
                 }
 
-                const resultado = await usuario.trocarSenha(atual.id, dados.senhaAtual, dados.senhaNova);
+                const fimCarregando = carregando.mostrar('Trocando senha…');
+                let resultado;
+                try {
+                    resultado = await usuario.trocarSenha(atual.id, dados.senhaAtual, dados.senhaNova);
+                    await NS.core.db.pendente();
+                } catch (falha) {
+                    erro.textContent = falha?.name === 'ErroSemConexao'
+                        ? 'Sem conexão com o servidor. A senha não foi alterada.'
+                        : 'Não foi possível alterar a senha. Tente novamente.';
+                    return;
+                } finally {
+                    fimCarregando();
+                }
 
                 if (!resultado.ok) {
                     erro.textContent = resultado.motivo;
@@ -363,7 +377,12 @@ async function processarArquivo(arquivo, container) {
 
     if (!confirmado) return;
 
-    backup.importar(resultado.dados);
+    const gravacao = await carregando.acaoRemota(
+        () => backup.importar(resultado.dados),
+        { mensagem: 'Importando backup…' }
+    );
+    if (!gravacao.ok) return;
+
     atualizarResumo(container);
     toast.sucesso('Backup importado. Use "Desfazer" se algo saiu errado.');
 }
@@ -437,14 +456,18 @@ const viewConfig = {
                 const alterou = await usuarioForm.abrirFormularioUsuario(usuario.obter(id));
                 if (alterou) recarregar();
             },
-            alternarAtivo: ({ id }) => {
+            alternarAtivo: async ({ id }) => {
                 if (!podeGerenciarUsuarios()) return;
 
                 const alvo = usuario.obter(id);
-                const resultado = usuario.definirAtivo(id, alvo.ativo === false);
+                const gravacao = await carregando.acaoRemota(
+                    () => usuario.definirAtivo(id, alvo.ativo === false),
+                    { mensagem: 'Atualizando usuário…' }
+                );
+                if (!gravacao.ok) return;
 
-                if (!resultado.ok) {
-                    toast.alerta(resultado.motivo);
+                if (!gravacao.valor.ok) {
+                    toast.alerta(gravacao.valor.motivo);
                     return;
                 }
 
@@ -464,10 +487,14 @@ const viewConfig = {
                 });
                 if (!confirmado) return;
 
-                const resultado = usuario.remover(id);
+                const gravacao = await carregando.acaoRemota(
+                    () => usuario.remover(id),
+                    { mensagem: 'Excluindo usuário…' }
+                );
+                if (!gravacao.ok) return;
 
-                if (!resultado.ok) {
-                    toast.alerta(resultado.motivo);
+                if (!gravacao.valor.ok) {
+                    toast.alerta(gravacao.valor.motivo);
                     return;
                 }
 
@@ -498,7 +525,13 @@ const viewConfig = {
                 });
                 if (!confirmado) return;
 
-                if (backup.desfazerImportacao()) {
+                const gravacao = await carregando.acaoRemota(
+                    () => backup.desfazerImportacao(),
+                    { mensagem: 'Restaurando dados…' }
+                );
+                if (!gravacao.ok) return;
+
+                if (gravacao.valor) {
                     atualizarResumo(container);
                     toast.sucesso('Dados restaurados.');
                 } else {
@@ -520,7 +553,12 @@ const viewConfig = {
                 });
                 if (!confirmado) return;
 
-                backup.importar(dadosTeste.gerar());
+                const gravacao = await carregando.acaoRemota(
+                    () => backup.importar(dadosTeste.gerar()),
+                    { mensagem: 'Gerando dados de teste…' }
+                );
+                if (!gravacao.ok) return;
+
                 atualizarResumo(container);
                 toast.sucesso('Dados de teste gerados. Use "Desfazer" para voltar ao que você tinha.');
             },
@@ -542,7 +580,12 @@ const viewConfig = {
                 });
                 if (!confirmado) return;
 
-                backup.limparTudo();
+                const gravacao = await carregando.acaoRemota(
+                    () => backup.limparTudo(),
+                    { mensagem: 'Apagando dados…' }
+                );
+                if (!gravacao.ok) return;
+
                 atualizarResumo(container);
                 toast.sucesso('Todos os dados foram apagados.');
             }
@@ -594,15 +637,18 @@ const viewConfig = {
 
             // O nome vive na conta; a config guarda um espelho só para o
             // header e para bases antigas, sem usuário.
-            if (atual) {
-                const resultado = await usuario.atualizar(atual.id, { nome: valor });
-                if (!resultado.ok) {
-                    toast.erro(resultado.motivo);
-                    return;
-                }
+            let resultado = { ok: true };
+            const gravacao = await carregando.acaoRemota(async () => {
+                if (atual) resultado = await usuario.atualizar(atual.id, { nome: valor });
+                if (resultado.ok) config.definirNomeUsuario(valor);
+            }, { mensagem: 'Salvando…' });
+            if (!gravacao.ok) return;
+
+            if (!resultado.ok) {
+                toast.erro(resultado.motivo);
+                return;
             }
 
-            config.definirNomeUsuario(valor);
             toast.sucesso('Nome salvo.');
         });
     },

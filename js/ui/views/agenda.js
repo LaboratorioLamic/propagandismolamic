@@ -42,6 +42,7 @@ var abrirRegistrarVisita = NS.ui.forms.visitaAcoes.abrirRegistrarVisita;
 var abrirMarcarAusente = NS.ui.forms.visitaAcoes.abrirMarcarAusente;
 var abrirReagendar = NS.ui.forms.visitaAcoes.abrirReagendar;
 var confirmarCancelamento = NS.ui.forms.visitaAcoes.confirmarCancelamento;
+var confirmarExclusao = NS.ui.forms.visitaAcoes.confirmarExclusao;
 var abrirVisualizarVisita = NS.ui.forms.visitaAcoes.abrirVisualizarVisita;
 var pode = NS.domain.permissoes.pode;
 let desinscrever = [];
@@ -49,13 +50,21 @@ let desligarDrag = null;
 let filtroSecao = '';
 let modoVisao = 'cards'; // 'cards' | 'semana' | 'mes'
 let dataRef = hojeISO();
-const secoesOcultas = new Set(); // chaves de SECOES recolhidas pelo usuário — persiste entre re-renders da view
+// Concluídas podem ser centenas: a seção pagina em blocos, então só 10 cards
+// (e 10 slots de mapa) existem no DOM por vez.
+const POR_PAGINA_CONCLUIDAS = 10;
+let paginaConcluidas = 1;
+
+// Chaves de SECOES recolhidas pelo usuário — persiste entre re-renders da view.
+// `concluidas` já nasce recolhida: é histórico, não trabalho pendente.
+const secoesOcultas = new Set(['concluidas']);
 
 const SECOES = [
     { chave: 'atrasadas', titulo: 'Atrasadas', modificador: 'secao--atrasadas', icone: 'alerta', corIcone: 'perigo' },
     { chave: 'hoje', titulo: 'Hoje', modificador: '', icone: 'relogio', corIcone: 'info' },
     { chave: 'amanha', titulo: 'Amanhã', modificador: '', icone: 'agenda', corIcone: 'roxa' },
-    { chave: 'proximas', titulo: 'Próximas', modificador: '', icone: 'setaDireita', corIcone: 'sucesso' }
+    { chave: 'proximas', titulo: 'Próximas', modificador: '', icone: 'setaDireita', corIcone: 'neutra' },
+    { chave: 'concluidas', titulo: 'Concluídos', modificador: 'secao--concluidas', icone: 'checkCirculo', corIcone: 'sucesso' }
 ];
 
 const VISOES = [
@@ -68,7 +77,7 @@ const VISOES = [
  * Visão em cards (comportamento original)
  * ------------------------------------------------------------------ */
 
-function renderSecao({ chave, titulo, modificador }, lista, { mostrarData = true } = {}) {
+function renderSecao({ chave, titulo, modificador }, lista, { mostrarData = true, contador = null, rodape = '' } = {}) {
     if (!lista.length) return '';
 
     const cards = lista.map(visita => {
@@ -83,10 +92,28 @@ function renderSecao({ chave, titulo, modificador }, lista, { mostrarData = true
             <button type="button" class="secao__titulo" data-acao="alternarSecao" data-id="${chave}" aria-expanded="${!oculta}">
                 ${raw(icone('setaBaixo', { classe: 'secao__seta' }))}
                 ${titulo}
-                <span class="secao__contador">${lista.length}</span>
+                <span class="secao__contador">${contador ?? lista.length}</span>
             </button>
             <div class="grid-cards" ${raw(oculta ? 'hidden' : '')}>${raw(cards)}</div>
+            ${raw(rodape ? html`<div class="secao__rodape" ${raw(oculta ? 'hidden' : '')}>${raw(rodape)}</div>` : '')}
         </section>
+    `;
+}
+
+/** Controles de página das concluídas. Some quando cabe tudo numa página só. */
+function paginacaoConcluidas(pagina, totalPaginas, total) {
+    if (totalPaginas <= 1) return '';
+
+    return html`
+        <button type="button" class="btn btn--outline btn--icone btn--sm" data-acao="paginaConcluidas" data-id="${pagina - 1}"
+            aria-label="Página anterior"${raw(pagina <= 1 ? ' disabled' : '')}>
+            ${raw(icone('setaEsquerda'))}
+        </button>
+        <span class="secao__paginacao-info">Página ${pagina} de ${totalPaginas} · ${pluralizar(total, 'visita concluída', 'visitas concluídas')}</span>
+        <button type="button" class="btn btn--outline btn--icone btn--sm" data-acao="paginaConcluidas" data-id="${pagina + 1}"
+            aria-label="Próxima página"${raw(pagina >= totalPaginas ? ' disabled' : '')}>
+            ${raw(icone('setaDireita'))}
+        </button>
     `;
 }
 
@@ -139,9 +166,24 @@ function renderVisaoCards(conteudo) {
     }
 
     conteudo.innerHTML = secoesFiltradas
-        .map(secao => renderSecao(secao, grupos[secao.chave], {
-            mostrarData: secao.chave !== 'hoje' && secao.chave !== 'amanha'
-        }))
+        .map(secao => {
+            const lista = grupos[secao.chave];
+            const opcoes = { mostrarData: secao.chave !== 'hoje' && secao.chave !== 'amanha' };
+
+            if (secao.chave !== 'concluidas') return renderSecao(secao, lista, opcoes);
+
+            const totalPaginas = Math.max(1, Math.ceil(lista.length / POR_PAGINA_CONCLUIDAS));
+            // A lista encolhe quando uma visita é excluída: sem isso a view
+            // ficaria travada numa página que não existe mais.
+            paginaConcluidas = Math.min(Math.max(paginaConcluidas, 1), totalPaginas);
+            const inicio = (paginaConcluidas - 1) * POR_PAGINA_CONCLUIDAS;
+
+            return renderSecao(secao, lista.slice(inicio, inicio + POR_PAGINA_CONCLUIDAS), {
+                ...opcoes,
+                contador: lista.length,
+                rodape: paginacaoConcluidas(paginaConcluidas, totalPaginas, lista.length)
+            });
+        })
         .join('');
 
     montarMapas(conteudo);
@@ -152,13 +194,16 @@ function renderVisaoCards(conteudo) {
  * ------------------------------------------------------------------ */
 
 /**
- * Agrupa por data ISO. Só visitas agendadas aparecem no calendário — as
- * concluídas (realizada/ausente/cancelada) ficam só no histórico do médico.
+ * Agrupa por data ISO. O calendário mostra as agendadas e as concluídas
+ * (estas em verde, via `TAG_STATUS.realizada`); ausentes e canceladas
+ * ficam só no histórico do médico.
  */
+const NO_CALENDARIO = new Set([visitas.STATUS.AGENDADA, visitas.STATUS.REALIZADA]);
+
 function agruparPorDia(lista) {
     const mapa = {};
     for (const visita of lista) {
-        if (visita.status !== visitas.STATUS.AGENDADA) continue;
+        if (!NO_CALENDARIO.has(visita.status)) continue;
         (mapa[visita.data] ||= []).push(visita);
     }
     for (const dia of Object.values(mapa)) {
@@ -269,6 +314,7 @@ function abrirDiaCompleto(iso) {
                 ausente: async ({ id }) => { if (!pode('agenda.concluir')) return; fechar(); await abrirMarcarAusente(id); },
                 reagendar: async ({ id }) => { if (!pode('agenda.reagendar')) return; fechar(); await abrirReagendar(id); },
                 cancelar: async ({ id }) => { if (!pode('agenda.cancelar')) return; fechar(); await confirmarCancelamento(id); },
+                excluir: async ({ id }) => { if (!pode('agenda.cancelar')) return; fechar(); await confirmarExclusao(id); },
                 detalheMedico: ({ id }) => { fechar(); if (id) abrirDetalheMedico(id, {}); },
                 novaNoDia: async () => { if (!pode('agenda.criar')) return; fechar(); await abrirFormularioVisita({ rascunho: { data: iso } }); }
             });
@@ -478,6 +524,10 @@ const viewAgenda = {
                     if (!pode('agenda.cancelar')) return;
                     await confirmarCancelamento(id);
                 },
+                excluir: async ({ id }) => {
+                    if (!pode('agenda.cancelar')) return;
+                    await confirmarExclusao(id);
+                },
                 detalheMedico: ({ id }) => {
                     if (id) abrirDetalheMedico(id, { aoAlterar: atualizar });
                 },
@@ -499,13 +549,21 @@ const viewAgenda = {
                     dataRef = hojeISO();
                     renderLista(container);
                 },
+                paginaConcluidas: ({ id }) => {
+                    const alvo = Number(id);
+                    if (!Number.isFinite(alvo) || alvo < 1) return;
+                    paginaConcluidas = alvo;
+                    renderLista(container);
+                },
                 alternarSecao: ({ id }, alvo) => {
                     if (secoesOcultas.has(id)) secoesOcultas.delete(id);
                     else secoesOcultas.add(id);
 
-                    const grid = alvo.closest('.secao').querySelector('.grid-cards');
+                    const secao = alvo.closest('.secao');
                     const expandida = !secoesOcultas.has(id);
-                    grid.hidden = !expandida;
+                    secao.querySelector('.grid-cards').hidden = !expandida;
+                    const rodape = secao.querySelector('.secao__rodape');
+                    if (rodape) rodape.hidden = !expandida;
                     alvo.setAttribute('aria-expanded', String(expandida));
                 }
             })

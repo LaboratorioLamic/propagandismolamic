@@ -9,6 +9,7 @@ var raw = NS.core.dom.raw;
 var hojeISO = NS.core.dom.hojeISO;
 var modal = NS.ui.modal;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var campoTexto = NS.ui.components.formField.campoTexto;
 var campoTextarea = NS.ui.components.formField.campoTextarea;
 var aplicarErros = NS.ui.components.formField.aplicarErros;
@@ -294,7 +295,7 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                     `;
                 });
 
-                form.addEventListener('submit', e => {
+                form.addEventListener('submit', async e => {
                     e.preventDefault();
                     limparErros(form);
 
@@ -309,7 +310,7 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                         return;
                     }
 
-                    salva = existente
+                    const gravar = () => existente
                         ? visitas.atualizar(existente.id, {
                             medicoId: dados.medicoId,
                             data: dados.data,
@@ -328,6 +329,10 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                             status: visitas.STATUS.AGENDADA
                         });
 
+                    const resultado = await carregando.acaoRemota(gravar, { mensagem: 'Salvando visita…' });
+                    if (!resultado.ok) return;
+
+                    salva = resultado.valor;
                     toast.sucesso(existente ? 'Visita atualizada.' : 'Visita agendada.');
                     fechar();
                 });

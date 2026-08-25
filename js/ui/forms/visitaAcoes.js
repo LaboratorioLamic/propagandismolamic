@@ -16,6 +16,7 @@ var formatarData = NS.core.dom.formatarData;
 var formatarDataExtensa = NS.core.dom.formatarDataExtensa;
 var modal = NS.ui.modal;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var campoTexto = NS.ui.components.formField.campoTexto;
 var campoTextarea = NS.ui.components.formField.campoTextarea;
 var lerFormulario = NS.ui.components.formField.lerFormulario;
@@ -28,6 +29,7 @@ var resumirEndereco = NS.domain.enderecoUtils.resumirEndereco;
 var visitas = NS.domain.visita;
 var medicos = NS.domain.medico;
 var objetivos = NS.domain.objetivo;
+var motivosAusencia = NS.domain.motivoAusencia;
 var especialidades = NS.domain.especialidade;
 var abrirFormularioVisita = NS.ui.forms.visitaForm.abrirFormularioVisita;
 var abrirGerenciarCatalogo = NS.ui.forms.catalogoForm.abrirGerenciarCatalogo;
@@ -112,13 +114,20 @@ function abrirRegistrarVisita(visitaId) {
                     const confirmacao = await abrirConfirmarConclusao(visita, medico);
                     if (!confirmacao) return;
 
-                    visitas.atualizar(visitaId, { objetivo: dados.objetivo });
-                    const resultado = visitas.aplicarTransicao(visitaId, visitas.STATUS.REALIZADA, {
-                        notas: dados.notas
-                    });
+                    // As duas escritas entram no mesmo `update()`: ninguém vê a
+                    // visita com o objetivo novo e o status velho.
+                    let transicao;
+                    const gravacao = await carregando.acaoRemota(() => {
+                        visitas.atualizar(visitaId, { objetivo: dados.objetivo });
+                        transicao = visitas.aplicarTransicao(visitaId, visitas.STATUS.REALIZADA, {
+                            notas: dados.notas
+                        });
+                    }, { mensagem: 'Registrando visita…' });
 
-                    if (!resultado.ok) {
-                        toast.erro(resultado.erro);
+                    if (!gravacao.ok) return;
+
+                    if (!transicao.ok) {
+                        toast.erro(transicao.erro);
                         return;
                     }
 
@@ -165,7 +174,7 @@ function abrirConfirmarConclusao(visita, medico) {
             titulo: 'Concluir visita',
             subtitulo: `${medico?.nome || 'Médico'} · ${formatarData(visita.data)}`,
             corpo: html`
-                <div class="form" id="form-confirmar-conclusao">
+                <form class="form" id="form-confirmar-conclusao" novalidate>
                     <div class="confirmacao__aviso">
                         Confirma a conclusão desta visita?
                     </div>
@@ -208,7 +217,7 @@ function abrirConfirmarConclusao(visita, medico) {
                             ${raw(icone('checkCirculo'))} Concluir
                         </button>
                     </div>
-                </div>
+                </form>
             `,
 
             aoMontar({ corpo, fechar }) {
@@ -261,9 +270,9 @@ function abrirMarcarAusente(visitaId) {
         let marcada = false;
         let motivo = '';
 
-        const opcoes = visitas.MOTIVOS_AUSENCIA.map(texto => html`
-            <button type="button" class="opcao" data-motivo="${texto}">
-                ${raw(icone('fecharCirculo'))} ${texto}
+        const opcoesMotivo = () => motivosAusencia.listar().map(item => html`
+            <button type="button" class="opcao${raw(item.nome === motivo ? ' opcao--ativa' : '')}" data-motivo="${item.nome}">
+                ${raw(icone('fecharCirculo'))} ${item.nome}
             </button>
         `).join('');
 
@@ -280,8 +289,15 @@ function abrirMarcarAusente(visitaId) {
                     ` : '')}
 
                     <div class="campo">
-                        <span class="campo__label">Motivo</span>
-                        <div class="form" data-opcoes>${raw(opcoes)}</div>
+                        <div class="campo__label-linha">
+                            <span class="campo__label">Motivo</span>
+                            ${raw(pode('catalogos.gerenciar') ? html`
+                                <button type="button" class="btn btn--sutil btn--sm" data-gerenciar-motivos>
+                                    ${raw(icone('config'))} Gerenciar motivos
+                                </button>
+                            ` : '')}
+                        </div>
+                        <div class="form" data-opcoes>${raw(opcoesMotivo())}</div>
                         <span class="campo__erro" data-erro="motivo"></span>
                     </div>
 
@@ -304,31 +320,44 @@ function abrirMarcarAusente(visitaId) {
 
             aoMontar({ corpo, fechar }) {
                 const slotErro = corpo.querySelector('[data-erro="motivo"]');
+                const listaOpcoes = corpo.querySelector('[data-opcoes]');
 
-                corpo.querySelector('[data-opcoes]').addEventListener('click', e => {
+                corpo.querySelector('[data-gerenciar-motivos]')?.addEventListener('click', async () => {
+                    await abrirGerenciarCatalogo({ titulo: 'Motivos de ausência', rotuloItem: 'Motivo', dominio: motivosAusencia });
+                    // O motivo escolhido pode ter sido renomeado ou removido:
+                    // a seleção só sobrevive se o texto ainda existir no catálogo.
+                    if (motivo && !motivosAusencia.porNome(motivo)) motivo = '';
+                    listaOpcoes.innerHTML = opcoesMotivo();
+                });
+
+                listaOpcoes.addEventListener('click', e => {
                     const botao = e.target.closest('[data-motivo]');
                     if (!botao) return;
 
-                    corpo.querySelectorAll('.opcao').forEach(el => el.classList.remove('opcao--ativa'));
+                    listaOpcoes.querySelectorAll('.opcao').forEach(el => el.classList.remove('opcao--ativa'));
                     botao.classList.add('opcao--ativa');
                     motivo = botao.dataset.motivo;
                     slotErro.textContent = '';
                 });
 
-                corpo.querySelector('[data-acao="salvar"]').addEventListener('click', () => {
+                corpo.querySelector('[data-acao="salvar"]').addEventListener('click', async () => {
                     if (!motivo) {
                         slotErro.textContent = 'Selecione o motivo.';
                         return;
                     }
 
                     const notas = corpo.querySelector('[name="notas"]').value.trim();
-                    const resultado = visitas.aplicarTransicao(visitaId, visitas.STATUS.AUSENTE, {
-                        motivoAusencia: motivo,
-                        notas
-                    });
+                    const gravacao = await carregando.acaoRemota(
+                        () => visitas.aplicarTransicao(visitaId, visitas.STATUS.AUSENTE, {
+                            motivoAusencia: motivo,
+                            notas
+                        }),
+                        { mensagem: 'Registrando ausência…' }
+                    );
+                    if (!gravacao.ok) return;
 
-                    if (!resultado.ok) {
-                        toast.erro(resultado.erro);
+                    if (!gravacao.valor.ok) {
+                        toast.erro(gravacao.valor.erro);
                         return;
                     }
 
@@ -409,7 +438,7 @@ function abrirReagendar(visitaId) {
             aoMontar({ corpo, fechar }) {
                 const form = corpo.querySelector('#form-reagendar');
 
-                form.addEventListener('submit', e => {
+                form.addEventListener('submit', async e => {
                     e.preventDefault();
                     limparErros(form);
 
@@ -419,15 +448,19 @@ function abrirReagendar(visitaId) {
                         return;
                     }
 
-                    const resultado = visitas.reagendar(visitaId, {
-                        data: dados.data,
-                        horario: dados.horario,
-                        duracao: dados.duracao || visitas.DURACAO_PADRAO,
-                        notas: dados.notas
-                    });
+                    const gravacao = await carregando.acaoRemota(
+                        () => visitas.reagendar(visitaId, {
+                            data: dados.data,
+                            horario: dados.horario,
+                            duracao: dados.duracao || visitas.DURACAO_PADRAO,
+                            notas: dados.notas
+                        }),
+                        { mensagem: 'Reagendando…' }
+                    );
+                    if (!gravacao.ok) return;
 
-                    if (!resultado.ok) {
-                        toast.erro(resultado.erro);
+                    if (!gravacao.valor.ok) {
+                        toast.erro(gravacao.valor.erro);
                         return;
                     }
 
@@ -462,13 +495,57 @@ async function confirmarCancelamento(visitaId) {
 
     if (!confirmado) return false;
 
-    const resultado = visitas.aplicarTransicao(visitaId, visitas.STATUS.CANCELADA);
-    if (!resultado.ok) {
-        toast.erro(resultado.erro);
+    const gravacao = await carregando.acaoRemota(
+        () => visitas.aplicarTransicao(visitaId, visitas.STATUS.CANCELADA),
+        { mensagem: 'Cancelando visita…' }
+    );
+    if (!gravacao.ok) return false;
+
+    if (!gravacao.valor.ok) {
+        toast.erro(gravacao.valor.erro);
         return false;
     }
 
     toast.sucesso('Visita cancelada.');
+    return true;
+}
+
+/**
+ * Exclusão definitiva de uma visita já encerrada (concluída, ausente ou
+ * cancelada). Diferente de cancelar: aqui o registro some do histórico,
+ * então a confirmação é explícita e sem desfazer.
+ */
+async function confirmarExclusao(visitaId) {
+    const visita = visitas.obter(visitaId);
+    if (!visita) {
+        toast.erro('Visita não encontrada.');
+        return false;
+    }
+
+    const medico = medicos.obter(visita.medicoId);
+
+    const confirmado = await modal.confirmar({
+        titulo: 'Excluir visita',
+        mensagem: `Excluir a visita a ${medico?.nome || 'este médico'} em ${formatarData(visita.data)}?`,
+        detalhe: 'O registro sai do histórico do médico e não há como recuperar.',
+        confirmarTexto: 'Excluir',
+        cancelarTexto: 'Voltar',
+        perigo: true
+    });
+    if (!confirmado) return false;
+
+    const gravacao = await carregando.acaoRemota(
+        () => visitas.remover(visitaId),
+        { mensagem: 'Excluindo visita…' }
+    );
+    if (!gravacao.ok) return false;
+
+    if (!gravacao.valor) {
+        toast.erro('Não foi possível excluir a visita.');
+        return false;
+    }
+
+    toast.sucesso('Visita excluída.');
     return true;
 }
 
@@ -558,6 +635,13 @@ function abrirVisualizarVisita(visitaId, { aoAlterar } = {}) {
                 botoes.push(html`<button type="button" class="btn btn--primario btn--sm" data-acao="reagendar">${raw(icone('reagendar'))} Reagendar</button>`);
             }
 
+            // Visita já encerrada continua editável (corrigir data, objetivo ou
+            // anotações depois do registro) e pode ser excluída de vez.
+            if (visitas.ehTerminal(visita.status)) {
+                if (pode('agenda.criar')) botoes.push(html`<button type="button" class="btn btn--outline btn--sm" data-acao="editar">${raw(icone('editar'))} Gerenciar</button>`);
+                if (pode('agenda.cancelar')) botoes.push(html`<button type="button" class="btn btn--perigo btn--sm" data-acao="excluir">${raw(icone('excluir'))} Excluir</button>`);
+            }
+
             botoes.push(html`<button type="button" class="btn btn--sutil btn--sm" data-acao="verMedico">${raw(icone('info'))} Ver médico</button>`);
             slot.innerHTML = botoes.join('');
 
@@ -570,6 +654,7 @@ function abrirVisualizarVisita(visitaId, { aoAlterar } = {}) {
                 else if (acao === 'ausente') { fechar(); await abrirMarcarAusente(visitaId); aoAlterar?.(); }
                 else if (acao === 'reagendar') { fechar(); await abrirReagendar(visitaId); aoAlterar?.(); }
                 else if (acao === 'cancelar') { fechar(); await confirmarCancelamento(visitaId); aoAlterar?.(); }
+                else if (acao === 'excluir') { fechar(); await confirmarExclusao(visitaId); aoAlterar?.(); }
                 else if (acao === 'verMedico') {
                     fechar();
                     if (medico) NS.ui.views.medicoDetalhe.abrirDetalheMedico(medico.id, { aoAlterar });
@@ -581,5 +666,5 @@ function abrirVisualizarVisita(visitaId, { aoAlterar } = {}) {
 
 NS.ui = NS.ui || {};
 NS.ui.forms = NS.ui.forms || {};
-NS.ui.forms.visitaAcoes = { abrirMarcarAusente, abrirReagendar, abrirRegistrarVisita, abrirVisualizarVisita, confirmarCancelamento };
+NS.ui.forms.visitaAcoes = { abrirMarcarAusente, abrirReagendar, abrirRegistrarVisita, abrirVisualizarVisita, confirmarCancelamento, confirmarExclusao };
 })();

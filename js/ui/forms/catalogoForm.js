@@ -13,6 +13,7 @@ var html = NS.core.dom.html;
 var raw = NS.core.dom.raw;
 var modal = NS.ui.modal;
 var icone = NS.ui.icons.icone;
+var carregando = NS.ui.carregando;
 
 /**
  * @param {object} opcoes
@@ -70,7 +71,7 @@ function abrirGerenciarCatalogo({ titulo, rotuloItem, dominio }) {
 
                 renderizar();
 
-                formNovo.addEventListener('submit', e => {
+                formNovo.addEventListener('submit', async e => {
                     e.preventDefault();
                     const nome = inputNovo.value.trim();
                     const mensagem = dominio.validar(nome);
@@ -80,14 +81,16 @@ function abrirGerenciarCatalogo({ titulo, rotuloItem, dominio }) {
                         return;
                     }
 
-                    dominio.criar(nome);
+                    const gravacao = await carregando.acaoRemota(() => dominio.criar(nome), { mensagem: 'Salvando…' });
+                    if (!gravacao.ok) return;
+
                     inputNovo.value = '';
                     alterou = true;
                     renderizar();
                     inputNovo.focus();
                 });
 
-                lista.addEventListener('change', e => {
+                lista.addEventListener('change', async e => {
                     const campo = e.target.closest('[data-editar]');
                     if (!campo) return;
 
@@ -101,12 +104,18 @@ function abrirGerenciarCatalogo({ titulo, rotuloItem, dominio }) {
                         return;
                     }
 
-                    dominio.atualizar(id, nome);
+                    const gravacao = await carregando.acaoRemota(() => dominio.atualizar(id, nome), { mensagem: 'Salvando…' });
+                    if (!gravacao.ok) {
+                        // A escrita falhou: o campo ainda mostra o texto digitado.
+                        renderizar();
+                        return;
+                    }
+
                     alterou = true;
                     renderizar();
                 });
 
-                lista.addEventListener('click', e => {
+                lista.addEventListener('click', async e => {
                     const botao = e.target.closest('[data-excluir]');
                     if (!botao) return;
 
@@ -116,8 +125,8 @@ function abrirGerenciarCatalogo({ titulo, rotuloItem, dominio }) {
                         return;
                     }
 
-                    const removido = dominio.remover(id);
-                    if (removido) {
+                    const gravacao = await carregando.acaoRemota(() => dominio.remover(id), { mensagem: 'Excluindo…' });
+                    if (gravacao.ok && gravacao.valor) {
                         alterou = true;
                         renderizar();
                     }

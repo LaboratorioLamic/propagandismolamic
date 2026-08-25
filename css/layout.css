@@ -21,6 +21,39 @@ body {
     overflow: hidden;
 }
 
+/* ---------- Faixa de conexão ----------
+   Só existe no grid quando o app está sem servidor: a linha "aviso" é
+   acrescentada por `body.sem-conexao`, então nada se desloca no uso normal. */
+body.sem-conexao {
+    grid-template-areas:
+        "aviso"
+        "header"
+        "main"
+        "nav";
+    grid-template-rows: auto auto 1fr auto;
+}
+
+.faixa-offline {
+    grid-area: aviso;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2) var(--sp-4);
+    background: var(--warning-light);
+    border-bottom: 1px solid var(--warning-border);
+    color: var(--warning-dark);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+}
+
+.faixa-offline[hidden] {
+    display: none;
+}
+
+.faixa-offline svg {
+    flex-shrink: 0;
+}
+
 /* ---------- Header ---------- */
 .app-header {
     grid-area: header;
@@ -269,6 +302,29 @@ body {
     font-weight: 700;
 }
 
+.secao__rodape {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3);
+    margin-top: var(--sp-3);
+    flex-wrap: wrap;
+}
+
+.secao__paginacao-info {
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+.secao--concluidas .secao__titulo {
+    color: var(--success-dark);
+}
+
+.secao--concluidas .secao__contador {
+    background: var(--success-light);
+    color: var(--success-dark);
+}
+
 .secao--atrasadas .secao__titulo {
     color: var(--danger-dark);
 }
@@ -289,6 +345,15 @@ body {
         grid-template-columns: var(--nav-largura) 1fr;
         grid-template-rows: auto 1fr;
     }
+
+    body.sem-conexao {
+        grid-template-areas:
+            "nav aviso"
+            "nav header"
+            "nav main";
+        grid-template-rows: auto auto 1fr;
+    }
+
 
     .app-nav {
         flex-direction: column;

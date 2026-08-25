@@ -31,6 +31,7 @@ const PATHS = {
     alerta: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
     info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
     relogio: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+    spinner: '<path d="M21 12a9 9 0 1 1-6.219-8.56"/>',
     usuarioAusente: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>',
     reagendar: '<path d="M3 2v6h6"/><path d="M3 13a9 9 0 1 0 3-7.7L3 8"/>',
     busca: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>',

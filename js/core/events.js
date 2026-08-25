@@ -29,7 +29,8 @@ function emit(evento, payload) {
 const EVENTOS = {
     DADOS_ALTERADOS: 'dados:alterados',
     CONFIG_ALTERADA: 'config:alterada',
-    SESSAO_ALTERADA: 'sessao:alterada'
+    SESSAO_ALTERADA: 'sessao:alterada',
+    CONEXAO_ALTERADA: 'conexao:alterada'
 };
 
 NS.core = NS.core || {};

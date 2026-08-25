@@ -211,8 +211,22 @@ function aplicarErros(form, erros) {
 }
 
 /** Lê o formulário como objeto plano, com os valores já aparados. */
+/**
+ * Lê os campos nomeados de um <form> — ou de qualquer container, para os
+ * blocos que vivem dentro de outro formulário e não podem ser <form>.
+ */
 function lerFormulario(form) {
     const dados = {};
+
+    if (!(form instanceof HTMLFormElement)) {
+        form?.querySelectorAll('[name]').forEach(campo => {
+            if (campo.type === 'checkbox') dados[campo.name] = campo.checked;
+            else if (campo.type === 'radio') { if (campo.checked) dados[campo.name] = campo.value.trim(); }
+            else dados[campo.name] = String(campo.value ?? '').trim();
+        });
+        return dados;
+    }
+
     new FormData(form).forEach((valor, chave) => {
         dados[chave] = typeof valor === 'string' ? valor.trim() : valor;
     });

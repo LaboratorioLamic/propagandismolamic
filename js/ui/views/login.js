@@ -21,6 +21,7 @@ var raw = NS.core.dom.raw;
 var delegarAcoes = NS.core.dom.delegarAcoes;
 var icone = NS.ui.icons.icone;
 var toast = NS.ui.toast;
+var carregando = NS.ui.carregando;
 var campoTexto = NS.ui.components.formField.campoTexto;
 var campoSenha = NS.ui.components.formField.campoSenha;
 var ligarRevelarSenha = NS.ui.components.formField.ligarRevelarSenha;
@@ -161,8 +162,9 @@ function render(container, { modo = 'login', aoEntrar } = {}) {
             `)}
 
             <p class="auth__nota">
-                Os dados ficam apenas neste navegador. O login organiza o acesso ao
-                sistema — não protege o arquivo contra quem tem acesso ao computador.
+                Os dados ficam num banco compartilhado pela equipe e precisam de
+                internet. O login organiza o acesso ao sistema — não é uma barreira
+                contra quem já tem o endereço do banco.
             </p>
         </div>
     `;
@@ -187,17 +189,28 @@ function render(container, { modo = 'login', aoEntrar } = {}) {
 
         const dados = lerFormulario(form);
         botaoEnviar.disabled = true;
+        const fimCarregando = carregando.mostrar(modo === 'login' ? 'Entrando…' : 'Criando conta…');
 
         try {
             const resultado = modo === 'login'
                 ? await enviarLogin(dados, form, erroGeral)
                 : await enviarCadastro(modo, dados, form, erroGeral);
 
+            // Cadastro grava no servidor; login grava o `ultimoAcesso`. Nos
+            // dois casos, esperar a confirmação evita entrar no app com uma
+            // gravação ainda no ar.
+            await NS.core.db.pendente();
+
             if (resultado?.ok) {
                 document.body.classList.remove('sessao-fechada');
                 aoEntrar?.(resultado.usuario);
             }
+        } catch (erro) {
+            erroGeral.textContent = erro?.name === 'ErroSemConexao'
+                ? 'Sem conexão com o servidor. Tente novamente em instantes.'
+                : 'Não foi possível concluir. Tente novamente.';
         } finally {
+            fimCarregando();
             botaoEnviar.disabled = false;
         }
     });

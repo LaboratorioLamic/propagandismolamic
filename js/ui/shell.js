@@ -80,7 +80,7 @@ function renderAcoes(container, aoSair) {
         const confirmado = await modal.confirmar({
             titulo: 'Sair do sistema',
             mensagem: `Encerrar a sessão de ${atual ? atual.nome : 'usuário'}?`,
-            detalhe: 'Os dados continuam salvos neste navegador.',
+            detalhe: 'Os dados continuam no servidor — entrar de novo traz tudo de volta.',
             confirmarTexto: 'Sair'
         });
         if (!confirmado) return;
