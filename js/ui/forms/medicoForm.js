@@ -160,6 +160,13 @@ function corpoFormulario(medico) {
                 </datalist>
 
                 ${raw(campoTexto({
+                    nome: 'complemento',
+                    label: 'Complemento',
+                    valor: endereco.complemento,
+                    placeholder: 'Sala, bloco, andar'
+                }))}
+
+                ${raw(campoTexto({
                     nome: 'referencia',
                     label: 'Ponto de referência',
                     valor: medico.referencia,

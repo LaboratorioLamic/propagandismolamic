@@ -15,7 +15,7 @@ const ESTADOS_BR = [
 ];
 
 function enderecoVazio() {
-    return { cep: '', rua: '', numero: '', bairro: '', cidade: '', estado: '' };
+    return { cep: '', rua: '', numero: '', complemento: '', bairro: '', cidade: '', estado: '' };
 }
 
 /** Sem acento e sem caixa — só para comparação e busca, nunca para exibição. */
@@ -39,9 +39,9 @@ function formatarCep(valor) {
  */
 function formatarEndereco(endereco, { incluirCep = true } = {}) {
     if (!endereco) return '';
-    const { rua, numero, bairro, cidade, estado, cep } = endereco;
+    const { rua, numero, complemento, bairro, cidade, estado, cep } = endereco;
 
-    return [rua, numero, bairro, cidade, estado, incluirCep ? formatarCep(cep) : '']
+    return [rua, numero, complemento, bairro, cidade, estado, incluirCep ? formatarCep(cep) : '']
         .map(parte => String(parte || '').trim())
         .filter(Boolean)
         .join(', ');

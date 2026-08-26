@@ -45,6 +45,7 @@ function montarDoFormulario(dados) {
             cep: formatarCep(dados.cep),
             rua: (dados.rua || '').trim(),
             numero: (dados.numero || '').trim(),
+            complemento: (dados.complemento || '').trim(),
             bairro: (dados.bairro || '').trim(),
             cidade: (dados.cidade || '').trim(),
             estado: normalizarEstado(dados.estado)
