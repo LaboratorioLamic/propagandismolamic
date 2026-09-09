@@ -28,6 +28,7 @@ var aplicarMascaraTelefone = NS.domain.telefone.aplicarMascaraTelefone;
 var ehTelefoneValido = NS.domain.telefone.ehTelefoneValido;
 var ehCelular = NS.domain.telefone.ehCelular;
 var ligarBuscaAutomatica = NS.services.viacep.ligarBuscaAutomatica;
+var enderecoAutocomplete = NS.services.enderecoAutocomplete;
 var abrirGerenciarCatalogo = NS.ui.forms.catalogoForm.abrirGerenciarCatalogo;
 var pode = NS.domain.permissoes.pode;
 
@@ -234,6 +235,7 @@ function abrirFormularioMedico(medicoExistente = null) {
                 ligarBuscaAutomatica(form, {
                     aoFalhar: mensagem => toast.alerta(mensagem)
                 });
+                enderecoAutocomplete.ligarAutocompletar(form);
 
                 // Aviso de fixo no campo WhatsApp: sinaliza, não bloqueia.
                 const whatsapp = form.querySelector('[name="whatsapp"]');

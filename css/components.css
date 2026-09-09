@@ -950,6 +950,58 @@ select.campo__controle {
     gap: var(--sp-2);
 }
 
+/* ---------- Autocompletar de campo (rua/bairro/cidade) ---------- */
+.campo-autocomplete {
+    position: relative;
+}
+
+.campo-autocomplete__lista {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-height: 220px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: var(--sp-1);
+    animation: popover-medico-abrir .15s ease;
+}
+
+.campo-autocomplete__lista[hidden] {
+    display: none;
+}
+
+.campo-autocomplete__opcao {
+    display: block;
+    width: 100%;
+    padding: var(--sp-2) var(--sp-3);
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: var(--fs-base);
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.campo-autocomplete__opcao:hover,
+.campo-autocomplete__opcao--ativa {
+    background: var(--bg);
+}
+
+.campo-autocomplete__opcao mark {
+    background: var(--primary-light);
+    color: var(--primary-dark);
+    border-radius: 3px;
+}
+
 .campo-com-botao .campo__controle {
     flex: 1;
     min-width: 0;
