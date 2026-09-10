@@ -32,7 +32,7 @@ var EVENTOS = NS.core.events.EVENTOS;
 var ErroSemConexao = NS.core.firebase.ErroSemConexao;
 
 /** Coleções persistidas como mapa de id -> registro. */
-const COLECOES = ['medicos', 'visitas', 'especialidades', 'objetivos', 'motivosAusencia', 'usuarios', 'grupos'];
+const COLECOES = ['medicos', 'visitas', 'especialidades', 'objetivos', 'motivosAusencia', 'marcadores', 'usuarios', 'grupos'];
 
 const CAMINHO_META = 'meta';
 const CAMINHO_LOCK = 'meta/migracao';

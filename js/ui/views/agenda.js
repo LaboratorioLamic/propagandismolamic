@@ -33,6 +33,7 @@ var avancar = NS.ui.components.calendario.avancar;
 var rotuloPeriodo = NS.ui.components.calendario.rotuloPeriodo;
 var visitas = NS.domain.visita;
 var medicos = NS.domain.medico;
+var marcadores = NS.domain.marcador;
 var formatarEndereco = NS.domain.enderecoUtils.formatarEndereco;
 var abrirFormularioVisita = NS.ui.forms.visitaForm.abrirFormularioVisita;
 var abrirDetalheMedico = NS.ui.views.medicoDetalhe.abrirDetalheMedico;
@@ -45,9 +46,12 @@ var confirmarCancelamento = NS.ui.forms.visitaAcoes.confirmarCancelamento;
 var confirmarExclusao = NS.ui.forms.visitaAcoes.confirmarExclusao;
 var abrirVisualizarVisita = NS.ui.forms.visitaAcoes.abrirVisualizarVisita;
 var pode = NS.domain.permissoes.pode;
+var abrirGerenciarMarcadores = NS.ui.forms.marcadorForm.abrirGerenciarMarcadores;
 let desinscrever = [];
 let desligarDrag = null;
 let filtroSecao = '';
+// Ids de marcadores selecionados no filtro. Vazio = sem filtro (mostra tudo).
+let filtroMarcadores = [];
 let modoVisao = 'cards'; // 'cards' | 'semana' | 'mes'
 let dataRef = hojeISO();
 // Concluídas podem ser centenas: a seção pagina em blocos, então só 10 cards
@@ -130,8 +134,17 @@ function montarMapas(container) {
     });
 }
 
+/**
+ * Lista já filtrada pelos marcadores escolhidos. Todo caminho de render
+ * passa por aqui — Cards, Semana e Mês filtram pelo mesmo critério, senão
+ * trocar de visão faria visitas "sumirem e voltarem" sem explicação.
+ */
+function visitasVisiveis() {
+    return visitas.filtrarVisitas(visitas.listar(), { marcadores: filtroMarcadores });
+}
+
 function renderVisaoCards(conteudo) {
-    const grupos = visitas.agruparParaAgenda(visitas.listar());
+    const grupos = visitas.agruparParaAgenda(visitasVisiveis());
     const secoesFiltradas = filtroSecao ? SECOES.filter(s => s.chave === filtroSecao) : SECOES;
 
     const temAlgo = secoesFiltradas.some(secao => grupos[secao.chave].length);
@@ -152,11 +165,11 @@ function renderVisaoCards(conteudo) {
             })
             : estadoVazio({
                 icone: 'agenda',
-                titulo: filtroSecao ? 'Nada com esse filtro' : 'Agenda vazia',
-                texto: filtroSecao
-                    ? 'Nenhuma visita neste grupo. Troque o filtro para ver as demais.'
+                titulo: filtroSecao || filtroMarcadores.length ? 'Nada com esse filtro' : 'Agenda vazia',
+                texto: filtroSecao || filtroMarcadores.length
+                    ? 'Nenhuma visita com esses filtros. Ajuste o grupo ou os marcadores para ver as demais.'
                     : 'Agende a primeira visita para começar a acompanhar sua rotina.',
-                acao: filtroSecao || !pode('agenda.criar') ? '' : html`
+                acao: filtroSecao || filtroMarcadores.length || !pode('agenda.criar') ? '' : html`
                     <button type="button" class="btn btn--primario" data-acao="nova">
                         ${raw(icone('agendaAdicionar'))} Agendar visita
                     </button>
@@ -219,7 +232,7 @@ function mapaMedicos() {
 }
 
 function renderVisaoCalendario(conteudo) {
-    const porDia = agruparPorDia(visitas.listar());
+    const porDia = agruparPorDia(visitasVisiveis());
     const porMedico = mapaMedicos();
     const hojeIso = hojeISO();
 
@@ -286,7 +299,7 @@ function abrirAcoesVisita(visitaId) {
 
 /** Modal do dia (clique no número do dia ou no "+N visitas" do mês): lista o dia inteiro usando os cards normais. */
 function abrirDiaCompleto(iso) {
-    const doDia = agruparPorDia(visitas.listar())[iso] || [];
+    const doDia = agruparPorDia(visitasVisiveis())[iso] || [];
 
     modal.abrir({
         titulo: formatarData(iso),
@@ -338,7 +351,7 @@ function renderLista(container) {
         renderVisaoCalendario(conteudo);
     }
 
-    const gruposResumo = visitas.agruparParaAgenda(visitas.listar());
+    const gruposResumo = visitas.agruparParaAgenda(visitasVisiveis());
     const abertas = gruposResumo.atrasadas.length + gruposResumo.hoje.length;
     const resumo = container.querySelector('[data-resumo]');
     resumo.textContent = abertas
@@ -425,6 +438,120 @@ function ligarFiltroSecao(container, opcoesSecao, aoMudar) {
     };
 }
 
+/**
+ * Popover "Marcadores" da barra de filtros: multisseleção, aplicada em
+ * OU (uma visita aparece se tiver qualquer um dos marcados).
+ *
+ * Devolve a função de limpeza do listener de clique-fora em `document`.
+ */
+function ligarFiltroMarcadores(container, aoMudar) {
+    const wrap = container.querySelector('[data-marcadores-filtro-wrap]');
+    if (!wrap) return () => {};
+
+    const gatilho = wrap.querySelector('[data-marcadores-filtro-gatilho]');
+    const popover = wrap.querySelector('[data-marcadores-filtro-popover]');
+    const lista = wrap.querySelector('[data-marcadores-filtro-lista]');
+    const contador = wrap.querySelector('[data-marcadores-filtro-contador]');
+    const limpar = wrap.querySelector('[data-marcadores-filtro-limpar]');
+
+    function refletirGatilho() {
+        const total = filtroMarcadores.length;
+        wrap.classList.toggle('popover-filtro-wrap--ativo', total > 0);
+        contador.textContent = total ? String(total) : '';
+        contador.hidden = !total;
+        gatilho.setAttribute('aria-label', total
+            ? `Marcadores: ${total} selecionado${total > 1 ? 's' : ''}`
+            : 'Filtrar por marcadores');
+    }
+
+    function desenharLista() {
+        const itens = marcadores.listar();
+
+        lista.innerHTML = itens.length
+            ? itens.map(m => {
+                const ativo = filtroMarcadores.includes(m.id);
+                return html`
+                    <button type="button" class="popover-marcadores__item${raw(ativo ? ' popover-marcadores__item--ativo' : '')}"
+                            role="option" aria-selected="${ativo}" data-marcador-filtro="${m.id}">
+                        <span class="popover-marcadores__ponto" style="background: ${m.cor}"></span>
+                        <span class="popover-marcadores__nome">${m.nome}</span>
+                        ${raw(ativo ? icone('check', { classe: 'popover-filtro__check' }) : '')}
+                    </button>
+                `;
+            }).join('')
+            : html`<div class="popover-marcadores__vazio">Nenhum marcador cadastrado ainda.</div>`;
+
+        limpar.hidden = !filtroMarcadores.length;
+    }
+
+    function fecharPopover() {
+        popover.hidden = true;
+        gatilho.setAttribute('aria-expanded', 'false');
+    }
+
+    function abrirPopover() {
+        desenharLista();
+        popover.hidden = false;
+        gatilho.setAttribute('aria-expanded', 'true');
+    }
+
+    gatilho.addEventListener('click', e => {
+        e.stopPropagation();
+        if (popover.hidden) abrirPopover(); else fecharPopover();
+    });
+
+    popover.addEventListener('click', async e => {
+        e.stopPropagation();
+
+        if (e.target.closest('[data-marcadores-filtro-limpar]')) {
+            filtroMarcadores = [];
+            refletirGatilho();
+            desenharLista();
+            aoMudar();
+            return;
+        }
+
+        if (e.target.closest('[data-marcadores-filtro-gerenciar]')) {
+            fecharPopover();
+            await abrirGerenciarMarcadores();
+            // Marcadores excluídos não podem continuar filtrando a lista.
+            filtroMarcadores = filtroMarcadores.filter(id => marcadores.obter(id));
+            refletirGatilho();
+            aoMudar();
+            return;
+        }
+
+        const item = e.target.closest('[data-marcador-filtro]');
+        if (!item) return;
+
+        const id = item.dataset.marcadorFiltro;
+        filtroMarcadores = filtroMarcadores.includes(id)
+            ? filtroMarcadores.filter(m => m !== id)
+            : [...filtroMarcadores, id];
+
+        refletirGatilho();
+        desenharLista();
+        aoMudar();
+    });
+
+    function aoClicarFora(e) {
+        if (!popover.hidden && !wrap.contains(e.target)) fecharPopover();
+    }
+    document.addEventListener('click', aoClicarFora);
+
+    function aoTeclar(e) {
+        if (e.key === 'Escape' && !popover.hidden) fecharPopover();
+    }
+    document.addEventListener('keydown', aoTeclar);
+
+    refletirGatilho();
+
+    return function destruir() {
+        document.removeEventListener('click', aoClicarFora);
+        document.removeEventListener('keydown', aoTeclar);
+    };
+}
+
 const viewAgenda = {
     render(container) {
         const opcoesSecao = [
@@ -473,6 +600,30 @@ const viewAgenda = {
                         `).join(''))}
                     </div>
                 </div>
+
+                <div class="campo popover-filtro-wrap popover-filtro-wrap--marcadores" data-marcadores-filtro-wrap>
+                    <button type="button" class="seletor-filtro" data-marcadores-filtro-gatilho
+                            aria-haspopup="true" aria-expanded="false" aria-label="Filtrar por marcadores">
+                        ${raw(icone('marcador', { classe: 'seletor-filtro__icone' }))}
+                        <span class="seletor-filtro__texto">Marcadores</span>
+                        <span class="seletor-filtro__contador" data-marcadores-filtro-contador hidden></span>
+                        ${raw(icone('setaBaixo'))}
+                    </button>
+
+                    <div class="popover-marcadores popover-marcadores--filtro" data-marcadores-filtro-popover hidden
+                         role="listbox" aria-multiselectable="true" aria-label="Filtrar por marcadores">
+                        <div class="popover-marcadores__cabecalho">
+                            <span class="popover-filtro__titulo">Filtrar por marcador</span>
+                            <button type="button" class="popover-marcadores__limpar" data-marcadores-filtro-limpar hidden>Limpar</button>
+                        </div>
+                        <div class="popover-marcadores__lista" data-marcadores-filtro-lista></div>
+                        ${raw(pode('catalogos.gerenciar') ? html`
+                            <button type="button" class="popover-marcadores__gerenciar" data-marcadores-filtro-gerenciar>
+                                ${raw(icone('config'))} Gerenciar marcadores
+                            </button>
+                        ` : '')}
+                    </div>
+                </div>
             </div>
 
             <div data-conteudo></div>
@@ -481,7 +632,8 @@ const viewAgenda = {
         renderLista(container);
         atualizarBotoesVisao(container);
         const destruirFiltro = ligarFiltroSecao(container, opcoesSecao, () => renderLista(container));
-        desinscrever.push(destruirFiltro);
+        const destruirFiltroMarcadores = ligarFiltroMarcadores(container, () => renderLista(container));
+        desinscrever.push(destruirFiltro, destruirFiltroMarcadores);
 
         container.querySelector('.segmentado').addEventListener('click', e => {
             const botao = e.target.closest('[data-visao]');

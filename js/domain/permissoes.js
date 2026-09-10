@@ -49,7 +49,7 @@ const MODULOS = [
         rotulo: 'Catálogos',
         icone: 'config',
         permissoes: [
-            { chave: 'catalogos.gerenciar', rotulo: 'Gerenciar especialidades e objetivos' }
+            { chave: 'catalogos.gerenciar', rotulo: 'Gerenciar especialidades, objetivos e marcadores' }
         ]
     },
     {

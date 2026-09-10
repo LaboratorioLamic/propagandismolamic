@@ -18,7 +18,7 @@
  * boot — a primeira aba que subir com o código novo faz a conversão.
  */
 
-const VERSAO_ATUAL = 4;
+const VERSAO_ATUAL = 5;
 
 /** IDs de fábrica para os objetivos padrão — usados pela migration v2 e pelas seeds. */
 const OBJETIVOS_PADRAO = [
@@ -35,6 +35,14 @@ const MOTIVOS_PADRAO = [
     { id: 'mot_consultorio_fechado', nome: 'Consultório fechado' },
     { id: 'mot_remarcado_secretaria', nome: 'Remarcado pela secretária' },
     { id: 'mot_outro', nome: 'Outro motivo' }
+];
+
+/** Marcadores de fábrica — catálogo editável a partir da v5. */
+const MARCADORES_PADRAO = [
+    { id: 'mrc_prioridade', nome: 'Prioridade', cor: '#ef4444' },
+    { id: 'mrc_amostra_gratis', nome: 'Amostra grátis', cor: '#10b981' },
+    { id: 'mrc_lancamento', nome: 'Lançamento', cor: '#8b5cf6' },
+    { id: 'mrc_retorno', nome: 'Retorno', cor: '#f59e0b' }
 ];
 
 /**
@@ -85,6 +93,7 @@ function dbVazio() {
         especialidades: [],
         objetivos: OBJETIVOS_PADRAO.map(o => ({ ...o })),
         motivosAusencia: MOTIVOS_PADRAO.map(m => ({ ...m })),
+        marcadores: MARCADORES_PADRAO.map(m => ({ ...m })),
         usuarios: [],
         grupos: gruposPadrao(),
         config: { nomeUsuario: '', autocadastro: false, grupoPadraoId: 'grp_propagandista' },
@@ -164,6 +173,20 @@ const MIGRATIONS = {
      */
     4(db) {
         db.motivosAusencia = MOTIVOS_PADRAO.map(m => ({ ...m }));
+    },
+
+    /**
+     * Marcadores: etiquetas coloridas, várias por visita.
+     *
+     * As visitas existentes ganham a lista vazia em vez de ficarem sem a
+     * chave — o filtro da Agenda e o formulário leem `visita.marcadores`
+     * direto, e um `undefined` espalharia checagem por toda a UI.
+     */
+    5(db) {
+        db.marcadores = MARCADORES_PADRAO.map(m => ({ ...m }));
+        for (const visita of db.visitas || []) {
+            if (!Array.isArray(visita.marcadores)) visita.marcadores = [];
+        }
     }
 };
 
@@ -194,6 +217,7 @@ function normalizar(bruto) {
         especialidades: Array.isArray(bruto.especialidades) ? bruto.especialidades : [],
         objetivos: Array.isArray(bruto.objetivos) ? bruto.objetivos : [],
         motivosAusencia: Array.isArray(bruto.motivosAusencia) ? bruto.motivosAusencia : [],
+        marcadores: Array.isArray(bruto.marcadores) ? bruto.marcadores : [],
         usuarios: Array.isArray(bruto.usuarios) ? bruto.usuarios : [],
         grupos: Array.isArray(bruto.grupos) ? bruto.grupos : [],
         config: { ...base.config, ...(bruto.config || {}) },
@@ -202,5 +226,5 @@ function normalizar(bruto) {
 }
 
 NS.core = NS.core || {};
-NS.core.storage = { MOTIVOS_PADRAO, OBJETIVOS_PADRAO, PERMISSOES_CONHECIDAS, VERSAO_ATUAL, dbVazio, gruposPadrao, migrar, normalizar };
+NS.core.storage = { MARCADORES_PADRAO, MOTIVOS_PADRAO, OBJETIVOS_PADRAO, PERMISSOES_CONHECIDAS, VERSAO_ATUAL, dbVazio, gruposPadrao, migrar, normalizar };
 })();

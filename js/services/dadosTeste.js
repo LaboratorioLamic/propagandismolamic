@@ -16,6 +16,7 @@ var PREFIXOS = NS.core.id.PREFIXOS;
 var storage = NS.core.storage;
 var STATUS = NS.domain.visita.STATUS;
 var MOTIVOS_PADRAO = NS.core.storage.MOTIVOS_PADRAO;
+var MARCADORES_PADRAO = NS.core.storage.MARCADORES_PADRAO;
 var DURACAO_PADRAO = NS.domain.visita.DURACAO_PADRAO;
 const MEDICOS_EXEMPLO = [
     { nome: 'Dra. Ana Souza', crm: 'CRM/SP 111111', especialidade: 'Ginecologia', cidade: 'São Paulo', estado: 'SP', bairro: 'Pinheiros', rua: 'Rua dos Pinheiros', numero: '500' },
@@ -31,6 +32,21 @@ const MEDICOS_EXEMPLO = [
 const HORARIOS = ['08:00', '09:00', '10:00', '11:00', '14:00', '15:00', '16:00', ''];
 const OBJETIVOS_EXEMPLO = storage.dbVazio().objetivos;
 const OBJETIVOS_LISTA = OBJETIVOS_EXEMPLO.map(o => o.id);
+
+/**
+ * Combinações de marcadores distribuídas pelas visitas de exemplo: algumas
+ * sem etiqueta nenhuma, uma com duas — é o que mostra o chip simples, o
+ * empilhado e o card "limpo" lado a lado na Agenda.
+ */
+const MARCADORES_LISTA = MARCADORES_PADRAO.map(m => m.id);
+const COMBOS_MARCADORES = [
+    [MARCADORES_LISTA[0]],
+    [],
+    [MARCADORES_LISTA[1], MARCADORES_LISTA[3]],
+    [MARCADORES_LISTA[2]],
+    [],
+    [MARCADORES_LISTA[3]]
+];
 
 function amostra(lista, indice) {
     return lista[indice % lista.length];
@@ -67,7 +83,7 @@ function medicoDeExemplo(dados, indice, especialidadeIdPorNome) {
     };
 }
 
-function visita({ medicoId, diasOffset, horario, status, objetivo, notas = '', motivoAusencia = '' }) {
+function visita({ medicoId, diasOffset, horario, status, objetivo, notas = '', motivoAusencia = '', marcadores = [] }) {
     return {
         id: novoId(PREFIXOS.visitas),
         medicoId,
@@ -78,6 +94,7 @@ function visita({ medicoId, diasOffset, horario, status, objetivo, notas = '', m
         objetivo,
         notas,
         motivoAusencia,
+        marcadores,
         visitaOrigemId: null,
         criadoEm: new Date().toISOString()
     };
@@ -99,11 +116,11 @@ function gerar() {
     const porId = i => medicos[i % medicos.length].id;
 
     // Atrasada (ontem, ainda "agendada").
-    visitas.push(visita({ medicoId: porId(0), diasOffset: -1, horario: '10:00', status: STATUS.AGENDADA, objetivo: amostra(OBJETIVOS_LISTA, 0) }));
+    visitas.push(visita({ medicoId: porId(0), diasOffset: -1, horario: '10:00', status: STATUS.AGENDADA, objetivo: amostra(OBJETIVOS_LISTA, 0), marcadores: amostra(COMBOS_MARCADORES, 0) }));
 
     // Hoje: uma pela manhã, outra à tarde.
-    visitas.push(visita({ medicoId: porId(1), diasOffset: 0, horario: '09:00', status: STATUS.AGENDADA, objetivo: amostra(OBJETIVOS_LISTA, 1) }));
-    visitas.push(visita({ medicoId: porId(2), diasOffset: 0, horario: '15:00', status: STATUS.AGENDADA, objetivo: amostra(OBJETIVOS_LISTA, 2) }));
+    visitas.push(visita({ medicoId: porId(1), diasOffset: 0, horario: '09:00', status: STATUS.AGENDADA, objetivo: amostra(OBJETIVOS_LISTA, 1), marcadores: amostra(COMBOS_MARCADORES, 2) }));
+    visitas.push(visita({ medicoId: porId(2), diasOffset: 0, horario: '15:00', status: STATUS.AGENDADA, objetivo: amostra(OBJETIVOS_LISTA, 2), marcadores: amostra(COMBOS_MARCADORES, 3) }));
 
     // Resto da semana corrente, espalhado, com um sem horário definido.
     for (let i = 0; i < 6; i++) {
@@ -112,7 +129,8 @@ function gerar() {
             diasOffset: i + 1,
             horario: amostra(HORARIOS, i),
             status: STATUS.AGENDADA,
-            objetivo: amostra(OBJETIVOS_LISTA, i)
+            objetivo: amostra(OBJETIVOS_LISTA, i),
+            marcadores: amostra(COMBOS_MARCADORES, i)
         }));
     }
 
@@ -123,12 +141,13 @@ function gerar() {
             diasOffset: 9 + i * 3,
             horario: amostra(HORARIOS, i + 2),
             status: STATUS.AGENDADA,
-            objetivo: amostra(OBJETIVOS_LISTA, i + 1)
+            objetivo: amostra(OBJETIVOS_LISTA, i + 1),
+            marcadores: amostra(COMBOS_MARCADORES, i + 1)
         }));
     }
 
     // Histórico: concluídas e uma ausência, nos dias anteriores.
-    visitas.push(visita({ medicoId: porId(4), diasOffset: -3, horario: '11:00', status: STATUS.REALIZADA, objetivo: amostra(OBJETIVOS_LISTA, 0), notas: 'Demonstrou interesse no novo painel de exames.' }));
+    visitas.push(visita({ medicoId: porId(4), diasOffset: -3, horario: '11:00', status: STATUS.REALIZADA, objetivo: amostra(OBJETIVOS_LISTA, 0), notas: 'Demonstrou interesse no novo painel de exames.', marcadores: amostra(COMBOS_MARCADORES, 2) }));
     visitas.push(visita({ medicoId: porId(5), diasOffset: -5, horario: '14:00', status: STATUS.REALIZADA, objetivo: amostra(OBJETIVOS_LISTA, 1), notas: 'Pediu retorno em 30 dias.' }));
     visitas.push(visita({ medicoId: porId(6), diasOffset: -2, horario: '16:00', status: STATUS.AUSENTE, objetivo: amostra(OBJETIVOS_LISTA, 2), motivoAusencia: amostra(MOTIVOS_PADRAO, 0).nome }));
     visitas.push(visita({ medicoId: porId(7), diasOffset: -8, horario: '10:00', status: STATUS.CANCELADA, objetivo: amostra(OBJETIVOS_LISTA, 0) }));
@@ -139,6 +158,7 @@ function gerar() {
         especialidades,
         objetivos: OBJETIVOS_EXEMPLO,
         motivosAusencia: MOTIVOS_PADRAO.map(m => ({ ...m })),
+        marcadores: MARCADORES_PADRAO.map(m => ({ ...m })),
         config: {}
     };
 }

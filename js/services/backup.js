@@ -19,6 +19,7 @@ var db = NS.core.db;
 var storage = NS.core.storage;
 var STATUS = NS.domain.visita.STATUS;
 var permissoes = NS.domain.permissoes;
+var marcadores = NS.domain.marcador;
 const APP_ID = 'labruta-propagandista';
 
 function dataArquivo() {
@@ -55,6 +56,7 @@ function exportar() {
         especialidades: (conteudo.dados.especialidades || []).length,
         objetivos: (conteudo.dados.objetivos || []).length,
         motivosAusencia: (conteudo.dados.motivosAusencia || []).length,
+        marcadores: (conteudo.dados.marcadores || []).length,
         usuarios: (conteudo.dados.usuarios || []).length
     };
 }
@@ -81,7 +83,7 @@ function validarBackup(texto) {
     }
 
     if (conteudo.app !== APP_ID) {
-        return { ok: false, erros: ['Este arquivo não é um backup do LabRuta.'], avisos };
+        return { ok: false, erros: ['Este arquivo não é um backup do Propagandismo LAMIC.'], avisos };
     }
 
     const versao = Number(conteudo.schemaVersion) || 0;
@@ -135,6 +137,24 @@ function validarBackup(texto) {
         });
     if (!motivosValidosLista.length) motivosValidosLista = storage.dbVazio().motivosAusencia;
 
+    // Marcadores: catálogo a partir da v5. Precisam de id, nome e uma cor
+    // HEX — cor inválida vira a padrão em vez de derrubar a entrada, senão
+    // um backup editado à mão perderia a etiqueta inteira por um "#gg0000".
+    const marcadoresValidos = [];
+    const idsMarcadores = new Set();
+
+    (Array.isArray(dados.marcadores) ? dados.marcadores : []).forEach((marcador, indice) => {
+        if (!marcador?.id || !marcador?.nome) {
+            avisos.push(`Marcador na posição ${indice + 1} ignorado: sem id ou nome.`);
+            return;
+        }
+        idsMarcadores.add(marcador.id);
+        marcadoresValidos.push({
+            ...marcador,
+            cor: marcadores.normalizarCor(marcador.cor) || marcadores.COR_PADRAO
+        });
+    });
+
     // Médicos: precisam de id e nome.
     const medicosValidos = [];
     const idsMedicos = new Set();
@@ -181,6 +201,13 @@ function validarBackup(texto) {
         }
         if (visita.objetivo && !idsObjetivos.has(visita.objetivo)) {
             visita = { ...visita, objetivo: '' };
+        }
+        // Marcadores órfãos são silenciosamente descartados: a visita não
+        // depende deles, e um aviso por etiqueta afogaria o relatório.
+        if (Array.isArray(visita.marcadores)) {
+            visita = { ...visita, marcadores: visita.marcadores.filter(id => idsMarcadores.has(id)) };
+        } else {
+            visita = { ...visita, marcadores: [] };
         }
 
         visitasValidas.push(visita);
@@ -246,6 +273,7 @@ function validarBackup(texto) {
             especialidades: especialidadesValidas,
             objetivos: objetivosValidosLista,
             motivosAusencia: motivosValidosLista,
+            marcadores: marcadoresValidos,
             ...(importarContas ? { usuarios: usuariosValidos, grupos: gruposValidos } : {}),
             // Sem trazer as contas, também não faz sentido trazer as opções que
             // dependem delas: `grupoPadraoId` apontaria para um grupo ausente.
@@ -277,7 +305,7 @@ function importar(dados) {
 function limparTudo() {
     db.salvarSnapshotPreImport();
     const atuais = db.exportarDados();
-    db.substituirTudo({ medicos: [], visitas: [], especialidades: [], objetivos: atuais.objetivos, motivosAusencia: atuais.motivosAusencia });
+    db.substituirTudo({ medicos: [], visitas: [], especialidades: [], objetivos: atuais.objetivos, motivosAusencia: atuais.motivosAusencia, marcadores: atuais.marcadores });
     return true;
 }
 
@@ -297,6 +325,7 @@ async function desfazerImportacao() {
         especialidades: anterior.especialidades,
         objetivos: anterior.objetivos,
         motivosAusencia: anterior.motivosAusencia,
+        marcadores: anterior.marcadores,
         ...(restaurarContas ? { usuarios: contas, grupos: anterior.grupos } : {}),
         config: anterior.config
     });

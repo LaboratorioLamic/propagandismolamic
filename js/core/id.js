@@ -24,6 +24,7 @@ const PREFIXOS = {
     especialidades: 'esp',
     objetivos: 'obj',
     motivosAusencia: 'mot',
+    marcadores: 'mrc',
     usuarios: 'usr',
     grupos: 'grp'
 };

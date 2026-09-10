@@ -72,6 +72,7 @@ function visitaVazia() {
         objetivo: 'fortalecer_relacionamento',
         notas: '',
         motivoAusencia: '',
+        marcadores: [],
         visitaOrigemId: null
     };
 }
@@ -201,13 +202,32 @@ function estaAtrasada(visita) {
     return visita.status === STATUS.AGENDADA && diffDias(visita.data, hojeISO()) > 0;
 }
 
+/** Ids dos marcadores de uma visita, tolerando registros anteriores à v5. */
+function marcadoresDe(visita) {
+    return Array.isArray(visita?.marcadores) ? visita.marcadores : [];
+}
+
+/**
+ * true se a visita carrega ao menos um dos marcadores pedidos.
+ *
+ * O filtro é OU, não E: marcar "Prioridade" e "Retorno" mostra tudo que é
+ * uma coisa OU a outra — a leitura natural de quem vai clicando etiquetas
+ * para ampliar a lista, não para cruzá-las.
+ */
+function temAlgumMarcador(visita, ids) {
+    if (!ids || !ids.length) return true;
+    const daVisita = marcadoresDe(visita);
+    return ids.some(id => daVisita.includes(id));
+}
+
 /** Filtro único e extensível — Ondas 2/3 acrescentam chaves aqui. */
-function filtrarVisitas(visitas, { status = '', medicoId = '', periodo = '' } = {}) {
+function filtrarVisitas(visitas, { status = '', medicoId = '', periodo = '', marcadores = [] } = {}) {
     const hoje = hojeISO();
 
     return visitas.filter(visita => {
         if (status && visita.status !== status) return false;
         if (medicoId && visita.medicoId !== medicoId) return false;
+        if (!temAlgumMarcador(visita, marcadores)) return false;
 
         if (periodo === 'abertas' && visita.status !== STATUS.AGENDADA) return false;
         if (periodo === 'hoje' && visita.data !== hoje) return false;
@@ -259,5 +279,5 @@ function agruparParaAgenda(visitas) {
 }
 
 NS.domain = NS.domain || {};
-NS.domain.visita = { COLECAO, DURACAO_PADRAO, ROTULOS_STATUS, STATUS, TAG_STATUS, TRANSICOES, acoesDisponiveis, agendadasDoMedico, agruparParaAgenda, aplicarTransicao, atualizar, criar, doMedico, ehTerminal, estaAtrasada, filtrarVisitas, horarioFim, listar, obter, podeTransicionar, reagendar, remover, visitaVazia };
+NS.domain.visita = { COLECAO, DURACAO_PADRAO, ROTULOS_STATUS, STATUS, TAG_STATUS, TRANSICOES, acoesDisponiveis, agendadasDoMedico, agruparParaAgenda, aplicarTransicao, atualizar, criar, doMedico, ehTerminal, estaAtrasada, filtrarVisitas, horarioFim, listar, marcadoresDe, obter, podeTransicionar, reagendar, remover, temAlgumMarcador, visitaVazia };
 })();

@@ -18,6 +18,8 @@ var resumirEndereco = NS.domain.enderecoUtils.resumirEndereco;
 var ROTULOS_STATUS = NS.domain.visita.ROTULOS_STATUS;
 var TAG_STATUS = NS.domain.visita.TAG_STATUS;
 var nomeObjetivo = NS.domain.objetivo.nomeDe;
+var marcadores = NS.domain.marcador;
+var marcadoresDaVisita = NS.domain.visita.marcadoresDe;
 var especialidades = NS.domain.especialidade;
 var estaAtrasada = NS.domain.visita.estaAtrasada;
 var ehTerminal = NS.domain.visita.ehTerminal;
@@ -60,6 +62,30 @@ function estadoVazio({ icone: nomeIcone = 'documento', titulo, texto, acao = '' 
             <span class="vazio__titulo">${titulo}</span>
             <p class="vazio__texto">${texto}</p>
             ${raw(acao)}
+        </div>
+    `;
+}
+
+/**
+ * Fita de marcadores de uma visita. String vazia quando não há nenhum —
+ * o card não ganha um espaço em branco por causa de uma lista vazia.
+ *
+ * Cada chip carrega a cor como variável CSS, então a folha de estilo
+ * define a forma uma vez só e cada etiqueta só troca o valor.
+ */
+function chipsMarcadores(visita) {
+    const itens = marcadores.dosIds(marcadoresDaVisita(visita));
+    if (!itens.length) return '';
+
+    return html`
+        <div class="card__marcadores">
+            ${raw(itens.map(m => html`
+                <span class="marcador-chip marcador-chip--sm"
+                      style="--marcador-cor: ${m.cor}; --marcador-fundo: ${marcadores.corComAlfa(m.cor, 0.12)}; --marcador-borda: ${marcadores.corComAlfa(m.cor, 0.34)}">
+                    ${raw(icone('marcador'))}
+                    <span>${m.nome}</span>
+                </span>
+            `).join(''))}
         </div>
     `;
 }
@@ -227,6 +253,8 @@ function cardVisita(visita, medico, { mostrarData = true } = {}) {
                     <span>${nomeObjetivo(visita.objetivo) || visita.objetivo}</span>
                 </div>
             ` : '')}
+
+            ${raw(chipsMarcadores(visita))}
 
             ${raw(visita.motivoAusencia ? html`
                 <div class="card__bloco">

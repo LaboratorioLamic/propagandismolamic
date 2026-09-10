@@ -20,8 +20,11 @@ var avatar = NS.ui.components.card.avatar;
 var medicos = NS.domain.medico;
 var visitas = NS.domain.visita;
 var objetivos = NS.domain.objetivo;
+var marcadores = NS.domain.marcador;
 var especialidades = NS.domain.especialidade;
 var abrirGerenciarCatalogo = NS.ui.forms.catalogoForm.abrirGerenciarCatalogo;
+var abrirGerenciarMarcadores = NS.ui.forms.marcadorForm.abrirGerenciarMarcadores;
+var estiloChip = NS.ui.forms.marcadorForm.estiloChip;
 var pode = NS.domain.permissoes.pode;
 
 function nomeEspecialidade(medico) {
@@ -30,6 +33,175 @@ function nomeEspecialidade(medico) {
 
 function opcoesObjetivo() {
     return objetivos.listar().map(o => ({ valor: o.id, texto: o.nome }));
+}
+
+/* ------------------------------------------------------------------ *
+ * Campo de marcadores (multisseleção)
+ * ------------------------------------------------------------------ */
+
+function chipMarcador(marcador, { removivel = false } = {}) {
+    return html`
+        <span class="marcador-chip marcador-chip--sm" style="${raw(estiloChip(marcador.cor))}" data-chip="${marcador.id}">
+            ${raw(icone('marcador'))}
+            <span>${marcador.nome}</span>
+            ${raw(removivel ? html`
+                <span class="marcador-chip__x" data-remover-marcador="${marcador.id}"
+                      role="button" tabindex="-1" aria-label="Remover ${marcador.nome}" title="Remover">
+                    ${raw(icone('fechar'))}
+                </span>
+            ` : '')}
+        </span>
+    `;
+}
+
+/**
+ * Campo de marcadores: um gatilho que mostra os chips já escolhidos, um
+ * popover de multisseleção e o botão de gerenciar ao lado — o mesmo par
+ * visual do campo de objetivo, que fica à esquerda dele.
+ */
+function campoMarcadores(selecionadosIniciais) {
+    return html`
+        <div class="campo campo--marcadores" data-campo="marcadores">
+            <label class="campo__label" for="campo-marcadores-gatilho">Marcadores</label>
+            <div class="campo-com-botao">
+                <div class="popover-marcadores-wrap">
+                    <button type="button" class="seletor-marcadores" id="campo-marcadores-gatilho"
+                            data-marcadores-gatilho aria-haspopup="true" aria-expanded="false">
+                        <span class="seletor-marcadores__chips" data-marcadores-chips></span>
+                        ${raw(icone('setaBaixo'))}
+                    </button>
+
+                    <div class="popover-marcadores" data-marcadores-popover hidden role="listbox"
+                         aria-multiselectable="true" aria-label="Selecionar marcadores">
+                        <div class="popover-filtro__titulo">Marcar esta visita</div>
+                        <div class="popover-marcadores__lista" data-marcadores-lista></div>
+                    </div>
+                </div>
+                ${raw(pode('catalogos.gerenciar') ? html`
+                    <button type="button" class="btn btn--outline btn--icone" data-gerenciar-marcadores
+                            aria-label="Gerenciar marcadores" title="Gerenciar marcadores">
+                        ${raw(icone('editar'))}
+                    </button>
+                ` : '')}
+            </div>
+            <input type="hidden" name="marcadores" value="${(selecionadosIniciais || []).join(',')}">
+        </div>
+    `;
+}
+
+/**
+ * Liga o campo de marcadores. Devolve `{ selecionados, redesenhar, destruir }`
+ * — `destruir` remove o listener de clique-fora em `document`, que de outro
+ * modo se acumularia a cada abertura do formulário.
+ */
+function ligarSeletorMarcadores(form, selecionadosIniciais) {
+    const wrap = form.querySelector('.popover-marcadores-wrap');
+    const gatilho = form.querySelector('[data-marcadores-gatilho]');
+    const popover = form.querySelector('[data-marcadores-popover]');
+    const lista = form.querySelector('[data-marcadores-lista]');
+    const chips = form.querySelector('[data-marcadores-chips]');
+    const hidden = form.querySelector('[name="marcadores"]');
+
+    // Só ids que ainda existem: um marcador excluído entre a abertura do
+    // formulário e o salvamento não pode voltar ao banco por este caminho.
+    const escolhidos = new Set(marcadores.dosIds(selecionadosIniciais).map(m => m.id));
+
+    function desenharChips() {
+        const itens = marcadores.dosIds([...escolhidos]);
+        chips.innerHTML = itens.length
+            ? itens.map(m => chipMarcador(m, { removivel: true })).join('')
+            : html`<span class="seletor-marcadores__vazio">Nenhum marcador</span>`;
+        hidden.value = [...escolhidos].join(',');
+    }
+
+    function desenharLista() {
+        const itens = marcadores.listar();
+
+        lista.innerHTML = itens.length
+            ? itens.map(m => html`
+                <button type="button" class="popover-marcadores__item${raw(escolhidos.has(m.id) ? ' popover-marcadores__item--ativo' : '')}"
+                        role="option" aria-selected="${escolhidos.has(m.id)}" data-marcador-valor="${m.id}">
+                    <span class="popover-marcadores__ponto" style="background: ${m.cor}"></span>
+                    <span class="popover-marcadores__nome">${m.nome}</span>
+                    ${raw(escolhidos.has(m.id) ? icone('check', { classe: 'popover-filtro__check' }) : '')}
+                </button>
+            `).join('')
+            : html`<div class="popover-marcadores__vazio">Nenhum marcador cadastrado ainda.</div>`;
+    }
+
+    function redesenhar() {
+        // Um marcador apagado no gerenciador sai da seleção junto.
+        for (const id of [...escolhidos]) if (!marcadores.obter(id)) escolhidos.delete(id);
+        desenharChips();
+        desenharLista();
+    }
+
+    function fecharPopover() {
+        popover.hidden = true;
+        gatilho.setAttribute('aria-expanded', 'false');
+    }
+
+    function abrirPopover() {
+        desenharLista();
+        popover.hidden = false;
+        gatilho.setAttribute('aria-expanded', 'true');
+    }
+
+    gatilho.addEventListener('click', e => {
+        // O "x" de cada chip vive dentro do gatilho: remover não pode,
+        // no mesmo clique, abrir o popover.
+        const remover = e.target.closest('[data-remover-marcador]');
+        if (remover) {
+            e.preventDefault();
+            e.stopPropagation();
+            escolhidos.delete(remover.dataset.removerMarcador);
+            desenharChips();
+            desenharLista();
+            return;
+        }
+
+        e.stopPropagation();
+        if (popover.hidden) abrirPopover(); else fecharPopover();
+    });
+
+    popover.addEventListener('click', e => {
+        e.stopPropagation();
+        const item = e.target.closest('[data-marcador-valor]');
+        if (!item) return;
+
+        const id = item.dataset.marcadorValor;
+        // Multisseleção: o popover segue aberto, dá para marcar vários seguidos.
+        if (escolhidos.has(id)) escolhidos.delete(id);
+        else escolhidos.add(id);
+
+        desenharChips();
+        desenharLista();
+    });
+
+    function aoClicarFora(e) {
+        if (!popover.hidden && !wrap.contains(e.target)) fecharPopover();
+    }
+    document.addEventListener('click', aoClicarFora);
+
+    // Esc fecha só o popover; o modal continua aberto (o listener do modal
+    // não chega a ver o evento porque o popover para a propagação).
+    function aoTeclar(e) {
+        if (e.key === 'Escape' && !popover.hidden) {
+            e.stopPropagation();
+            fecharPopover();
+        }
+    }
+    form.addEventListener('keydown', aoTeclar);
+
+    redesenhar();
+
+    return {
+        selecionados: () => [...escolhidos],
+        redesenhar,
+        destruir() {
+            document.removeEventListener('click', aoClicarFora);
+        }
+    };
 }
 
 /**
@@ -208,6 +380,7 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
 
         let salva = null;
         let destruirSeletorMedico = null;
+        let destruirSeletorMarcadores = null;
 
         modal.abrir({
             titulo: existente ? 'Editar visita' : 'Agendar visita',
@@ -238,22 +411,26 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                         }))}
                     </div>
 
-                    <div class="campo" data-campo="objetivo">
-                        <label class="campo__label" for="campo-objetivo">Objetivo da visita <span class="campo__obrigatorio" aria-hidden="true">*</span></label>
-                        <div class="campo-com-botao">
-                            <select class="campo__controle" id="campo-objetivo" name="objetivo" required data-select-objetivo>
-                                <option value="">Selecione...</option>
-                                ${raw(opcoesObjetivo().map(o => html`
-                                    <option value="${o.valor}"${raw(o.valor === visita.objetivo ? ' selected' : '')}>${o.texto}</option>
-                                `).join(''))}
-                            </select>
-                            ${raw(pode('catalogos.gerenciar') ? html`
-                                <button type="button" class="btn btn--outline btn--icone" data-gerenciar-objetivos aria-label="Gerenciar objetivos" title="Gerenciar objetivos">
-                                    ${raw(icone('config'))}
-                                </button>
-                            ` : '')}
+                    <div class="form-linha form-linha--objetivo">
+                        <div class="campo" data-campo="objetivo">
+                            <label class="campo__label" for="campo-objetivo">Objetivo da visita <span class="campo__obrigatorio" aria-hidden="true">*</span></label>
+                            <div class="campo-com-botao">
+                                <select class="campo__controle" id="campo-objetivo" name="objetivo" required data-select-objetivo>
+                                    <option value="">Selecione...</option>
+                                    ${raw(opcoesObjetivo().map(o => html`
+                                        <option value="${o.valor}"${raw(o.valor === visita.objetivo ? ' selected' : '')}>${o.texto}</option>
+                                    `).join(''))}
+                                </select>
+                                ${raw(pode('catalogos.gerenciar') ? html`
+                                    <button type="button" class="btn btn--outline btn--icone" data-gerenciar-objetivos aria-label="Gerenciar objetivos" title="Gerenciar objetivos">
+                                        ${raw(icone('config'))}
+                                    </button>
+                                ` : '')}
+                            </div>
+                            <span class="campo__erro" data-erro="objetivo"></span>
                         </div>
-                        <span class="campo__erro" data-erro="objetivo"></span>
+
+                        ${raw(campoMarcadores(visita.marcadores))}
                     </div>
 
                     ${raw(campoTextarea({
@@ -276,6 +453,16 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
             aoMontar({ corpo, fechar }) {
                 const form = corpo.querySelector('#form-visita');
                 destruirSeletorMedico = ligarSeletorMedico(form);
+
+                const seletorMarcadores = ligarSeletorMarcadores(form, visita.marcadores);
+                destruirSeletorMarcadores = seletorMarcadores.destruir;
+
+                corpo.querySelector('[data-gerenciar-marcadores]')?.addEventListener('click', async () => {
+                    await abrirGerenciarMarcadores();
+                    // O catálogo pode ter mudado embaixo do campo: renome, cor
+                    // nova ou exclusão precisam aparecer nos chips já escolhidos.
+                    seletorMarcadores.redesenhar();
+                });
 
                 corpo.querySelector('[data-gerenciar-objetivos]')?.addEventListener('click', async () => {
                     const select = form.querySelector('[data-select-objetivo]');
@@ -310,6 +497,8 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                         return;
                     }
 
+                    const marcadoresEscolhidos = seletorMarcadores.selecionados();
+
                     const gravar = () => existente
                         ? visitas.atualizar(existente.id, {
                             medicoId: dados.medicoId,
@@ -317,6 +506,7 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                             horario: dados.horario,
                             duracao: dados.duracao || visitas.DURACAO_PADRAO,
                             objetivo: dados.objetivo,
+                            marcadores: marcadoresEscolhidos,
                             notas: dados.notas
                         })
                         : visitas.criar({
@@ -325,6 +515,7 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
                             horario: dados.horario,
                             duracao: dados.duracao || visitas.DURACAO_PADRAO,
                             objetivo: dados.objetivo,
+                            marcadores: marcadoresEscolhidos,
                             notas: dados.notas,
                             status: visitas.STATUS.AGENDADA
                         });
@@ -340,6 +531,7 @@ function abrirFormularioVisita({ medicoId = '', visita: existente = null, rascun
 
             aoFechar() {
                 destruirSeletorMedico?.();
+                destruirSeletorMarcadores?.();
                 resolve(salva);
             }
         });

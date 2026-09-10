@@ -234,16 +234,41 @@ body.sem-conexao {
 }
 
 /*
- * Na Agenda, segmentado (Cards/Semana/Mês) + filtro de grupo sempre na
- * mesma linha — mesmo no mobile o segmentado não quebra (é inline-flex)
- * e o filtro encolhe (.popover-filtro-wrap) em vez de cair pra baixo.
+ * Na Agenda a barra tem três controles: segmentado (Cards/Semana/Mês),
+ * filtro de grupo e filtro de marcadores. Os três só cabem lado a lado a
+ * partir de 720px; abaixo disso a barra quebra e os dois filtros dividem
+ * a segunda linha, em vez de espremer os rótulos até virarem reticências.
+ *
+ * Todo o dimensionamento dos filtros da Agenda mora aqui — `.popover-filtro-wrap`
+ * tem uma regra genérica em components.css, e concentrar as exceções num
+ * lugar só evita as duas se anularem conforme a ordem dos arquivos.
  */
 .barra-filtros--agenda {
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
 }
 
 .barra-filtros--agenda .segmentado {
     flex-shrink: 0;
+}
+
+/* O filtro de grupo tem texto variável: é ele que cede espaço. */
+.barra-filtros--agenda .popover-filtro-wrap {
+    flex: 1 1 130px;
+}
+
+/* O de marcadores tem rótulo fixo e curto: larga o que o conteúdo pedir. */
+.barra-filtros--agenda .popover-filtro-wrap--marcadores {
+    flex: 0 0 auto;
+}
+
+@media (min-width: 720px) {
+    .barra-filtros--agenda {
+        flex-wrap: nowrap;
+    }
+
+    .barra-filtros--agenda .popover-filtro-wrap:not(.popover-filtro-wrap--marcadores) {
+        flex: 0 1 200px;
+    }
 }
 
 .barra-filtros__busca {

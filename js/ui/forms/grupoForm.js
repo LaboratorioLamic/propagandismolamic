@@ -62,12 +62,24 @@ function lerPermissoes(raiz) {
     return Array.from(raiz.querySelectorAll('[data-permissao]:checked')).map(el => el.value);
 }
 
-/** Colapsar/expandir os módulos dentro de um editor. */
+/**
+ * Colapsar/expandir os módulos dentro de um editor, em modo sanfona: abrir
+ * um fecha os outros do MESMO editor (grupo novo e cada grupo existente
+ * têm o seu). Com Agenda, Médicos, Catálogos, Ajustes e Usuários, deixar
+ * vários abertos ao mesmo tempo empilha demais para a altura disponível —
+ * cada um mostra só o título espremido contra o próximo.
+ */
 function ligarModulos(raiz) {
     raiz.addEventListener('click', e => {
         const cab = e.target.closest('[data-abrir-modulo]');
         if (!cab || !raiz.contains(cab)) return;
-        cab.closest('[data-modulo]').classList.toggle('modulo--aberto');
+
+        const modulo = cab.closest('[data-modulo]');
+        const editor = cab.closest('[data-editor]');
+        const jaAberto = modulo.classList.contains('modulo--aberto');
+
+        editor.querySelectorAll('[data-modulo]').forEach(m => m.classList.remove('modulo--aberto'));
+        if (!jaAberto) modulo.classList.add('modulo--aberto');
     });
 }
 
@@ -193,7 +205,7 @@ function markup() {
                     ` : '')}
                 </article>
 
-                <article class="card">
+                <article class="card card--sem-recorte">
                     <div class="bloco-titulo">
                         <span class="bloco-titulo__icone">${raw(icone('grupos'))}</span>
                         <span class="bloco-titulo__texto">

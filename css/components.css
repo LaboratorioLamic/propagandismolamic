@@ -609,6 +609,8 @@ select.campo__controle {
     .form-linha--cidade-uf { grid-template-columns: 1fr 90px; }
     /* Médico ocupa mais espaço; especialidade é só leitura. */
     .form-linha--medico { grid-template-columns: 1.6fr 1fr; }
+    /* Objetivo é obrigatório e mais largo; marcadores acompanham ao lado. */
+    .form-linha--objetivo { grid-template-columns: 1.15fr 1fr; align-items: start; }
 }
 
 /* ---------- Seletor de médico (gatilho + popover pesquisável) ---------- */
@@ -788,8 +790,10 @@ select.campo__controle {
     min-width: 0;
 }
 
+/* O filtro de marcadores tem largura de conteúdo (ver layout.css) e fica
+   de fora desta largura fixa. */
 @media (min-width: 520px) {
-    .popover-filtro-wrap {
+    .popover-filtro-wrap:not(.popover-filtro-wrap--marcadores) {
         flex: 0 1 200px;
     }
 }
@@ -1067,6 +1071,519 @@ select.campo__controle {
     text-align: center;
     font-size: var(--fs-sm);
     color: var(--text-muted);
+}
+
+/* ============================================================
+   Marcadores (etiquetas coloridas de visita)
+   ============================================================ */
+
+/*
+ * A cor de cada marcador entra por variável (--marcador-cor e as duas
+ * derivadas, calculadas em JS com alfa), então a forma do chip é definida
+ * uma vez só aqui e cada etiqueta só troca o valor.
+ */
+.marcador-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: 100%;
+    padding: 4px 10px;
+    background: var(--marcador-fundo, var(--bg));
+    border: 1px solid var(--marcador-borda, var(--border));
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--marcador-cor, var(--text));
+}
+
+.marcador-chip > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.marcador-chip svg {
+    flex-shrink: 0;
+    width: 13px;
+    height: 13px;
+    color: var(--marcador-cor, var(--text-muted));
+}
+
+.marcador-chip--sm {
+    padding: 3px 9px;
+    font-size: var(--fs-xs);
+}
+
+.marcador-chip--sm svg {
+    width: 12px;
+    height: 12px;
+}
+
+/* O "x" de remover, dentro do chip no formulário de visita. */
+.marcador-chip__x {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    margin-right: -3px;
+    border-radius: 50%;
+    color: var(--marcador-cor, var(--text-muted));
+    opacity: .65;
+    cursor: pointer;
+    transition: opacity var(--transicao), background var(--transicao);
+}
+
+.marcador-chip__x:hover {
+    opacity: 1;
+    background: var(--marcador-borda, var(--border));
+}
+
+.marcador-chip__x svg {
+    width: 10px;
+    height: 10px;
+}
+
+/* Fita de marcadores no card de visita. */
+.card__marcadores {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: var(--sp-1);
+}
+
+/* ---------- Campo de marcadores no formulário de visita ---------- */
+.popover-marcadores-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+}
+
+.seletor-marcadores {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    width: 100%;
+    min-height: 42px;
+    padding: 6px var(--sp-3);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color var(--transicao), box-shadow var(--transicao);
+}
+
+.seletor-marcadores:hover {
+    border-color: var(--primary);
+}
+
+.seletor-marcadores[aria-expanded="true"] {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-border);
+}
+
+.seletor-marcadores__chips {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+.seletor-marcadores__vazio {
+    font-size: var(--fs-sm);
+    color: var(--text-soft);
+}
+
+.seletor-marcadores > svg {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    transition: transform var(--transicao);
+}
+
+.seletor-marcadores[aria-expanded="true"] > svg {
+    transform: rotate(180deg);
+}
+
+/* ---------- Popover de marcadores (formulário e filtro) ---------- */
+/*
+ * Alinhado pela direita e limitado à largura do próprio campo: dentro do
+ * modal (que rola em Y e portanto recorta em X) um popover mais largo que
+ * o campo empurraria o corpo para os lados e faria nascer uma barra de
+ * rolagem horizontal.
+ */
+.popover-marcadores {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    left: auto;
+    z-index: 25;
+    min-width: 100%;
+    max-width: 100%;
+    padding: var(--sp-2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    animation: popover-medico-abrir .15s ease;
+}
+
+.popover-marcadores[hidden] {
+    display: none;
+}
+
+/*
+ * No filtro da Agenda o popover alinha pela direita — encostado na borda
+ * direita da barra, ele não vaza da tela. Abaixo de 520px o gatilho é
+ * estreito demais para servir de âncora: aí o popover passa a `fixed`,
+ * centrado e com a largura útil da tela, em vez de escorrer para fora.
+ */
+.popover-marcadores--filtro {
+    left: auto;
+    right: 0;
+    /* Fora do modal não há recorte: o popover do filtro pode ser mais
+       largo que o gatilho, que é estreito. */
+    min-width: 240px;
+    max-width: calc(100vw - 2 * var(--sp-4));
+}
+
+.popover-marcadores__cabecalho {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-2);
+}
+
+.popover-marcadores__limpar {
+    padding: var(--sp-1) var(--sp-2);
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    color: var(--primary);
+    cursor: pointer;
+}
+
+.popover-marcadores__limpar:hover {
+    background: var(--primary-light);
+}
+
+.popover-marcadores__lista {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.popover-marcadores__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    width: 100%;
+    padding: var(--sp-2);
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-sm);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transicao);
+}
+
+.popover-marcadores__item:hover {
+    background: var(--bg);
+}
+
+.popover-marcadores__item--ativo {
+    background: var(--primary-light);
+}
+
+.popover-marcadores__ponto {
+    flex-shrink: 0;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+}
+
+.popover-marcadores__nome {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--text);
+}
+
+.popover-marcadores__vazio {
+    padding: var(--sp-4) var(--sp-3);
+    text-align: center;
+    font-size: var(--fs-sm);
+    color: var(--text-muted);
+}
+
+.popover-marcadores__gerenciar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-2);
+    width: 100%;
+    margin-top: var(--sp-2);
+    padding: var(--sp-2);
+    border: none;
+    border-top: 1px solid var(--border);
+    background: transparent;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: color var(--transicao);
+}
+
+.popover-marcadores__gerenciar:hover {
+    color: var(--primary);
+}
+
+.popover-marcadores__gerenciar svg {
+    width: 15px;
+    height: 15px;
+}
+
+/* ---------- Gatilho do filtro de marcadores (barra da Agenda) ---------- */
+/* O rótulo "Marcadores" é fixo e curto: não vira reticências. */
+.popover-filtro-wrap--marcadores .seletor-filtro__texto {
+    flex: 0 0 auto;
+    overflow: visible;
+}
+
+.seletor-filtro__icone {
+    flex-shrink: 0;
+    width: 15px;
+    height: 15px;
+    color: var(--text-muted);
+}
+
+.popover-filtro-wrap--ativo .seletor-filtro {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+
+.popover-filtro-wrap--ativo .seletor-filtro__icone,
+.popover-filtro-wrap--ativo .seletor-filtro__texto {
+    color: var(--primary-dark);
+}
+
+.seletor-filtro__contador {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    background: var(--primary);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    color: #fff;
+}
+
+.seletor-filtro__contador[hidden] {
+    display: none;
+}
+
+/* ---------- Gerenciador de marcadores ---------- */
+.marcador-gerenciar {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-2);
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.marcador-linha {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.marcador-linha .marcador-chip {
+    flex: 0 1 auto;
+    min-width: 0;
+}
+
+.marcador-linha__usos {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: right;
+    font-size: var(--fs-xs);
+    color: var(--text-soft);
+}
+
+.marcador-previa {
+    display: flex;
+    align-items: center;
+    padding: var(--sp-3);
+    background: var(--bg);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-sm);
+}
+
+/* ============================================================
+   Seletor de cores (matriz saturação/valor + trilho de matiz)
+   ============================================================ */
+.seletor-cor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-3);
+    padding: var(--sp-3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.seletor-cor__topo {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+}
+
+.seletor-cor__amostra {
+    flex-shrink: 0;
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-sm);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+}
+
+.seletor-cor__hex-wrap {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: var(--sp-2);
+    min-width: 0;
+}
+
+.seletor-cor__hex-rotulo {
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    letter-spacing: .04em;
+    color: var(--text-soft);
+}
+
+.seletor-cor__hex {
+    flex: 1;
+    min-width: 0;
+    padding: 8px var(--sp-3);
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: var(--fs-sm);
+    text-transform: lowercase;
+    color: var(--text);
+}
+
+.seletor-cor__hex:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-border);
+}
+
+/*
+ * A matriz é a cor pura (--matiz, trocada em JS) com dois gradientes por
+ * cima: branco no eixo X e preto no eixo Y — o mesmo empilhamento que os
+ * seletores nativos usam, sem canvas nem redesenho por pixel.
+ */
+.seletor-cor__area {
+    position: relative;
+    height: 150px;
+    border-radius: var(--radius-sm);
+    background:
+        linear-gradient(to top, #000, rgba(0, 0, 0, 0)),
+        linear-gradient(to right, #fff, rgba(255, 255, 255, 0)),
+        var(--matiz, #f00);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.seletor-cor__area:focus-visible,
+.seletor-cor__matiz:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+
+.seletor-cor__matiz {
+    position: relative;
+    height: 14px;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(to right,
+        #f00 0%, #ff0 17%, #0f0 33%, #0ff 50%, #00f 67%, #f0f 83%, #f00 100%);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+    cursor: pointer;
+    touch-action: none;
+}
+
+.seletor-cor__alca {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 16px;
+    height: 16px;
+    /* A alça acompanha o ponto exato: o translate tira o próprio tamanho
+       da conta, então ela fica centrada na coordenada, não ao lado dela. */
+    transform: translate(-50%, -50%);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(15, 23, 42, .45);
+    pointer-events: none;
+}
+
+.seletor-cor__alca--matiz {
+    top: 50%;
+    width: 18px;
+    height: 18px;
+}
+
+.seletor-cor__paleta {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
+}
+
+.seletor-cor__atalho {
+    aspect-ratio: 1;
+    border: none;
+    border-radius: var(--radius-sm);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12);
+    cursor: pointer;
+    transition: transform var(--transicao), box-shadow var(--transicao);
+}
+
+.seletor-cor__atalho:hover {
+    transform: scale(1.12);
+    box-shadow: inset 0 0 0 1px rgba(15, 23, 42, .12), 0 2px 8px rgba(15, 23, 42, .22);
+}
+
+.seletor-cor__atalho:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
 }
 
 /* ============================================================

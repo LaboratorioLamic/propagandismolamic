@@ -237,7 +237,7 @@ function markupAbaBackup() {
             <article class="card">
                 <div class="card__nome">Sobre</div>
                 <p class="card__sub">
-                    LabRuta Propagandista · Onda 1<br>
+                    Propagandismo LAMIC · Onda 1<br>
                     Agenda de visitas e carteira de médicos.
                 </p>
                 <div class="card__bloco texto-sm">

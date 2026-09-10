@@ -19,5 +19,5 @@
  *   sed -i "s/APP_VERSION = '[^']*'/APP_VERSION = '$V'/" js/core/versao.js
  */
 
-NS.APP_VERSION = '2026-08-25-01';
+NS.APP_VERSION = '2026-09-10-01';
 })();

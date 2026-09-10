@@ -582,17 +582,33 @@ body.sessao-fechada .app-main > * {
     align-items: start;
 }
 
+/*
+ * `.card` recorta o conteúdo (overflow: hidden — é o que corta a faixa
+ * colorida nos cantos arredondados dos cards de visita/médico). O card de
+ * "Grupos cadastrados" cresce ao expandir um grupo: com o recorte herdado,
+ * um grupo aberto com vários módulos junto ficava com o rodapé cortado
+ * pelo próprio card, sem barra de rolagem nenhuma pra alcançá-lo.
+ */
+.card--sem-recorte {
+    overflow: visible;
+}
+
 @media (min-width: 900px) {
     .grupos-layout {
         grid-template-columns: minmax(0, 360px) minmax(0, 1fr);
     }
 }
 
+/*
+ * Sanfona: só um módulo fica aberto por vez (ver `ligarModulos`), então
+ * a altura do editor não precisa caber vários corpos empilhados — só a
+ * lista de cabeçalhos fechados mais um corpo aberto por cima.
+ */
 .permissoes-editor {
     display: flex;
     flex-direction: column;
     gap: var(--sp-2);
-    max-height: 340px;
+    max-height: 420px;
     overflow-y: auto;
     padding: var(--sp-2);
     background: var(--bg);
@@ -699,7 +715,9 @@ body.sessao-fechada .app-main > * {
 
 .grupo-item__corpo {
     display: none;
+    max-height: 70vh;
     padding: var(--sp-3);
+    overflow-y: auto;
     border-top: 1px solid var(--border);
     background: var(--bg);
 }
