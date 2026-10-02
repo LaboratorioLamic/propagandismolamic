@@ -25,6 +25,7 @@ var limparErros = NS.ui.components.formField.limparErros;
 var icone = NS.ui.icons.icone;
 var avatar = NS.ui.components.card.avatar;
 var botaoWhatsApp = NS.ui.components.card.botaoWhatsApp;
+var chipsMarcadores = NS.ui.components.card.chipsMarcadores;
 var resumirEndereco = NS.domain.enderecoUtils.resumirEndereco;
 var visitas = NS.domain.visita;
 var medicos = NS.domain.medico;
@@ -608,6 +609,8 @@ function abrirVisualizarVisita(visitaId, { aoAlterar } = {}) {
                             <span>${endereco}</span>
                         </div>
                     ` : '')}
+
+                    ${raw(chipsMarcadores(visita))}
 
                     ${raw(visita.motivoAusencia ? html`
                         <div class="card__bloco"><strong>Motivo:</strong> ${visita.motivoAusencia}</div>

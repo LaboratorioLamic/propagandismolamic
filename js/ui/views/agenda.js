@@ -33,6 +33,7 @@ var avancar = NS.ui.components.calendario.avancar;
 var rotuloPeriodo = NS.ui.components.calendario.rotuloPeriodo;
 var visitas = NS.domain.visita;
 var medicos = NS.domain.medico;
+var especialidades = NS.domain.especialidade;
 var marcadores = NS.domain.marcador;
 var formatarEndereco = NS.domain.enderecoUtils.formatarEndereco;
 var abrirFormularioVisita = NS.ui.forms.visitaForm.abrirFormularioVisita;
@@ -52,7 +53,7 @@ let desligarDrag = null;
 let filtroSecao = '';
 // Ids de marcadores selecionados no filtro. Vazio = sem filtro (mostra tudo).
 let filtroMarcadores = [];
-let modoVisao = 'cards'; // 'cards' | 'semana' | 'mes'
+let modoVisao = 'cards'; // 'cards' | 'semana' | 'mes' | 'rotina'
 let dataRef = hojeISO();
 // Concluídas podem ser centenas: a seção pagina em blocos, então só 10 cards
 // (e 10 slots de mapa) existem no DOM por vez.
@@ -74,7 +75,8 @@ const SECOES = [
 const VISOES = [
     { chave: 'cards', rotulo: 'Cards', icone: 'listaCards' },
     { chave: 'semana', rotulo: 'Semana', icone: 'colunas' },
-    { chave: 'mes', rotulo: 'Mês', icone: 'grade' }
+    { chave: 'mes', rotulo: 'Mês', icone: 'grade' },
+    { chave: 'rotina', rotulo: 'Rotina', icone: 'repetir' }
 ];
 
 /* ------------------------------------------------------------------ *
@@ -336,6 +338,85 @@ function abrirDiaCompleto(iso) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Visão Rotina (DOM–SÁB, médicos pela rotina do cadastro)
+ * ------------------------------------------------------------------ */
+
+/** Próxima ocorrência do dia da semana `dia` (0 = domingo), contando hoje. */
+function proximaDataDoDia(dia) {
+    const [ano, mes, diaMes] = hojeISO().split('-').map(Number);
+    const hoje = new Date(ano, mes - 1, diaMes);
+    const data = new Date(ano, mes - 1, diaMes + (dia - hoje.getDay() + 7) % 7);
+    return `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, '0')}-${String(data.getDate()).padStart(2, '0')}`;
+}
+
+function cardRotina(medico, iso, agendado) {
+    const info = [especialidades.obter(medico.especialidadeId)?.nome, medico.endereco?.bairro].filter(Boolean).join(' · ');
+
+    return html`
+        <button type="button" class="rotina__card${raw(agendado ? ' rotina__card--agendado' : '')}"
+                data-acao="agendarRotina" data-id="${medico.id}" data-data="${iso}"
+                title="${agendado ? 'Já há visita agendada neste dia' : 'Agendar visita em ' + formatarData(iso)}">
+            <span class="rotina__nome">${medico.nome}</span>
+            ${raw(info ? html`<span class="rotina__info">${info}</span>` : '')}
+            ${raw(agendado ? html`<span class="rotina__status">${raw(icone('check'))} Agendada</span>` : '')}
+        </button>
+    `;
+}
+
+/**
+ * Colunas DOM–SÁB com os médicos de rotina em cada dia. A data de cada
+ * coluna é a próxima ocorrência daquele dia; o card marca quem já tem
+ * visita agendada nela, para não agendar em dobro.
+ */
+function renderVisaoRotina(conteudo) {
+    const todos = medicos.listar();
+
+    if (!todos.some(m => medicos.normalizarRotina(m.rotina).length)) {
+        conteudo.innerHTML = estadoVazio({
+            icone: 'repetir',
+            titulo: 'Nenhuma rotina cadastrada',
+            texto: 'Marque os dias de rotina no cadastro de cada médico para montar a semana.',
+            acao: html`
+                <a class="btn btn--primario" href="#/medicos">
+                    ${raw(icone('medicos'))} Ir para Médicos
+                </a>
+            `
+        });
+        return;
+    }
+
+    const agendadas = new Set(
+        visitas.listar()
+            .filter(v => v.status === visitas.STATUS.AGENDADA)
+            .map(v => `${v.medicoId}|${v.data}`)
+    );
+    const hojeIso = hojeISO();
+
+    const colunas = medicos.DIAS_ROTINA.map(({ dia, curto }) => {
+        const iso = proximaDataDoDia(dia);
+        const doDia = medicos.listarPorDiaRotina(dia);
+        const [, mes, diaMes] = iso.split('-');
+
+        return html`
+            <section class="rotina__dia${raw(iso === hojeIso ? ' rotina__dia--hoje' : '')}">
+                <header class="rotina__cab">
+                    <span class="rotina__cab-nome">${curto}</span>
+                    <span class="rotina__cab-data">${diaMes}/${mes}</span>
+                    <span class="rotina__cab-contador">${doDia.length}</span>
+                </header>
+                <div class="rotina__lista">
+                    ${raw(doDia.length
+                        ? doDia.map(m => cardRotina(m, iso, agendadas.has(`${m.id}|${iso}`))).join('')
+                        : html`<span class="rotina__vazio">—</span>`)}
+                </div>
+            </section>
+        `;
+    }).join('');
+
+    conteudo.innerHTML = html`<div class="rotina">${raw(colunas)}</div>`;
+}
+
+/* ------------------------------------------------------------------ *
  * Orquestração
  * ------------------------------------------------------------------ */
 
@@ -347,6 +428,8 @@ function renderLista(container) {
 
     if (modoVisao === 'cards') {
         renderVisaoCards(conteudo);
+    } else if (modoVisao === 'rotina') {
+        renderVisaoRotina(conteudo);
     } else {
         renderVisaoCalendario(conteudo);
     }
@@ -363,11 +446,15 @@ function atualizarBotoesVisao(container) {
     container.querySelectorAll('[data-visao]').forEach(botao => {
         botao.classList.toggle('segmentado__opcao--ativa', botao.dataset.visao === modoVisao);
     });
-    container.querySelector('[data-conteudo]').classList.toggle('view-calendario', modoVisao !== 'cards');
+    container.querySelector('[data-conteudo]').classList.toggle('view-calendario', modoVisao === 'semana' || modoVisao === 'mes');
 
     // O filtro por grupo só faz sentido na visão Cards — Semana/Mês mostram tudo.
     const filtroWrap = container.querySelector('[data-filtro-wrap]');
     if (filtroWrap) filtroWrap.hidden = modoVisao !== 'cards';
+
+    // Marcadores pertencem às visitas; a Rotina lista médicos, então o filtro não se aplica.
+    const marcadoresWrap = container.querySelector('[data-marcadores-filtro-wrap]');
+    if (marcadoresWrap) marcadoresWrap.hidden = modoVisao === 'rotina';
 }
 
 /**
@@ -639,7 +726,7 @@ const viewAgenda = {
             const botao = e.target.closest('[data-visao]');
             if (!botao) return;
             modoVisao = botao.dataset.visao;
-            if (modoVisao !== 'cards') dataRef = hojeISO();
+            if (modoVisao === 'semana' || modoVisao === 'mes') dataRef = hojeISO();
             renderLista(container);
             atualizarBotoesVisao(container);
         });
@@ -688,6 +775,15 @@ const viewAgenda = {
                 },
                 verDia: ({ id }) => {
                     if (id) abrirDiaCompleto(id);
+                },
+                agendarRotina: async ({ id, data }) => {
+                    if (!id) return;
+                    // Sem permissão de agendar, o card ainda serve para consultar o médico.
+                    if (!pode('agenda.criar')) {
+                        abrirDetalheMedico(id, { aoAlterar: atualizar });
+                        return;
+                    }
+                    await abrirFormularioVisita({ medicoId: id, rascunho: { data } });
                 },
                 periodoAnterior: () => {
                     dataRef = avancar(dataRef, modoVisao, -1);

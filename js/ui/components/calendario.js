@@ -19,6 +19,9 @@ var raw = NS.core.dom.raw;
 var TAG_STATUS = NS.domain.visita.TAG_STATUS;
 var estaAtrasada = NS.domain.visita.estaAtrasada;
 var horarioFim = NS.domain.visita.horarioFim;
+var marcadoresDaVisita = NS.domain.visita.marcadoresDe;
+var marcadores = NS.domain.marcador;
+var icone = NS.ui.icons.icone;
 const DIAS_CURTOS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const MESES_NOME = [
     'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
@@ -131,6 +134,15 @@ function eventoCompacto(visita, medico, { estilo = '' } = {}) {
     const arrastavel = visita.status === 'agendada';
     const fim = horarioFim(visita.horario, visita.duracao);
     const faixaHorario = visita.horario && fim ? `${visita.horario}–${fim}` : visita.horario;
+    const itensMarcador = marcadores.dosIds(marcadoresDaVisita(visita));
+
+    // No evento compacto não cabe o nome do marcador: só o símbolo na cor
+    // dele, com o nome no `title` para quem passar o mouse.
+    const simbolos = itensMarcador.length ? html`
+        <span class="evento__marcadores" title="${itensMarcador.map(m => m.nome).join(', ')}">
+            ${raw(itensMarcador.map(m => html`<span class="evento__marcador" style="color: ${m.cor}">${raw(icone('marcador'))}</span>`).join(''))}
+        </span>
+    ` : '';
 
     return html`
         <article
@@ -143,6 +155,7 @@ function eventoCompacto(visita, medico, { estilo = '' } = {}) {
         >
             ${raw(faixaHorario ? html`<span class="evento__hora">${faixaHorario}</span>` : '')}
             <span class="evento__nome">${nome}</span>
+            ${raw(simbolos)}
         </article>
     `;
 }

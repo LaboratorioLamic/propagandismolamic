@@ -298,5 +298,5 @@ function itemHistorico(visita) {
 
 NS.ui = NS.ui || {};
 NS.ui.components = NS.ui.components || {};
-NS.ui.components.card = { avatar, botaoWhatsApp, cardMedico, cardVisita, estadoVazio, itemHistorico };
+NS.ui.components.card = { avatar, botaoWhatsApp, cardMedico, chipsMarcadores, cardVisita, estadoVazio, itemHistorico };
 })();

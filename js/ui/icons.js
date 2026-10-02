@@ -50,6 +50,7 @@ const PATHS = {
     listaCards: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/>',
     colunas: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18M15 3v18"/>',
     grade: '<path d="M8 2v4M16 2v4M3 10h18"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 16h18M9 10v10M15 10v10"/>',
+    repetir: '<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>',
     setaEsquerda: '<path d="m15 18-6-6 6-6"/>',
     setaDireita: '<path d="m9 18 6-6-6-6"/>',
     setaBaixo: '<path d="m6 9 6 6 6-6"/>',

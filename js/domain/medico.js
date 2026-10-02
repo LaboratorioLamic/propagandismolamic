@@ -20,6 +20,28 @@ var ehCelular = NS.domain.telefone.ehCelular;
 var formatarTelefone = NS.domain.telefone.formatarTelefone;
 const COLECAO = 'medicos';
 
+/** Índices de `Date#getDay()`: 0 = domingo … 6 = sábado. */
+const DIAS_ROTINA = [
+    { dia: 0, curto: 'DOM', nome: 'Domingo' },
+    { dia: 1, curto: 'SEG', nome: 'Segunda' },
+    { dia: 2, curto: 'TER', nome: 'Terça' },
+    { dia: 3, curto: 'QUA', nome: 'Quarta' },
+    { dia: 4, curto: 'QUI', nome: 'Quinta' },
+    { dia: 5, curto: 'SEX', nome: 'Sexta' },
+    { dia: 6, curto: 'SÁB', nome: 'Sábado' }
+];
+
+/**
+ * Dias da semana em que o médico é visitado de rotina, sempre como array
+ * ordenado e sem repetição. O RTDB apaga arrays vazios e pode devolver
+ * arrays como objeto `{0: 1, 1: 3}`, então tudo que vem do banco passa aqui.
+ */
+function normalizarRotina(valor) {
+    const bruto = Array.isArray(valor) ? valor : Object.values(valor || {});
+    const dias = bruto.map(Number).filter(d => Number.isInteger(d) && d >= 0 && d <= 6);
+    return [...new Set(dias)].sort((a, b) => a - b);
+}
+
 function medicoVazio() {
     return {
         nome: '',
@@ -29,7 +51,8 @@ function medicoVazio() {
         whatsapp: '',
         endereco: enderecoVazio(),
         referencia: '',
-        diasHorarios: ''
+        diasHorarios: '',
+        rotina: []
     };
 }
 
@@ -51,7 +74,8 @@ function montarDoFormulario(dados) {
             estado: normalizarEstado(dados.estado)
         },
         referencia: (dados.referencia || '').trim(),
-        diasHorarios: (dados.diasHorarios || '').trim()
+        diasHorarios: (dados.diasHorarios || '').trim(),
+        rotina: normalizarRotina(dados.rotina)
     };
 }
 
@@ -124,6 +148,11 @@ function buscar(termo) {
     });
 }
 
+/** Médicos com rotina no dia da semana `dia` (0 = domingo). */
+function listarPorDiaRotina(dia) {
+    return listar().filter(medico => normalizarRotina(medico.rotina).includes(dia));
+}
+
 function criar(dados) {
     return db.criar(COLECAO, dados);
 }
@@ -137,5 +166,5 @@ function remover(id) {
 }
 
 NS.domain = NS.domain || {};
-NS.domain.medico = { COLECAO, atualizar, avisos, buscar, criar, listar, medicoVazio, montarDoFormulario, obter, remover, validar };
+NS.domain.medico = { COLECAO, DIAS_ROTINA, atualizar, avisos, buscar, criar, listar, listarPorDiaRotina, medicoVazio, montarDoFormulario, normalizarRotina, obter, remover, validar };
 })();

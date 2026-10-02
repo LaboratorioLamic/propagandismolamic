@@ -95,6 +95,15 @@ function abrirDetalheMedico(medicoId, { aoAlterar } = {}) {
                     </div>
                 ` : '')}
 
+                ${raw(medicos.normalizarRotina(medico.rotina).length ? html`
+                    <div class="detalhe__grupo">
+                        <span class="detalhe__rotulo">Rotina de visita</span>
+                        <span class="detalhe__valor">${medicos.DIAS_ROTINA
+                            .filter(d => medicos.normalizarRotina(medico.rotina).includes(d.dia))
+                            .map(d => d.nome).join(', ')}</span>
+                    </div>
+                ` : '')}
+
                 <div class="detalhe__grupo">
                     <span class="detalhe__rotulo">Endereço</span>
                     <span class="detalhe__valor">${enderecoTexto || 'Não informado'}</span>

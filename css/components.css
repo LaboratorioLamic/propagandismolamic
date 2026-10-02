@@ -2226,3 +2226,66 @@ button.mapa__placeholder:hover {
     color: var(--primary);
     box-shadow: var(--shadow-sm);
 }
+
+/* ============================================================
+   Campo "Rotina de visita" (cadastro de médico): DOM–SÁB
+   ============================================================ */
+.campo-rotina {
+    margin: 0;
+    padding: 0;
+    border: 0;
+}
+
+.campo-rotina > legend {
+    padding: 0;
+    margin-bottom: var(--sp-1);
+}
+
+.campo-rotina__dias {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: var(--sp-1);
+}
+
+.campo-rotina__dia {
+    position: relative;
+    cursor: pointer;
+}
+
+/* O checkbox fica invisível mas focável; o <span> é o botão visível. */
+.campo-rotina__dia input {
+    position: absolute;
+    opacity: 0;
+    inset: 0;
+    margin: 0;
+    cursor: pointer;
+}
+
+.campo-rotina__dia span {
+    display: block;
+    padding: 8px 0;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+    background: var(--surface);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    text-align: center;
+    transition: background var(--transicao), color var(--transicao), border-color var(--transicao);
+}
+
+.campo-rotina__dia:hover span {
+    border-color: var(--primary-border);
+    color: var(--text);
+}
+
+.campo-rotina__dia input:checked + span {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+}
+
+.campo-rotina__dia input:focus-visible + span {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}

@@ -40,6 +40,27 @@ function opcoesEspecialidade(selecionadaId) {
     return html`<option value="">Selecione...</option>${raw(itens)}`;
 }
 
+/**
+ * Dias de rotina como checkboxes com o mesmo `name`. FormData guardaria só
+ * o último marcado, então o submit lê esses campos à parte.
+ */
+function campoRotina(selecionados) {
+    return html`
+        <fieldset class="campo campo-rotina" data-campo="rotina">
+            <legend class="campo__label">Rotina de visita</legend>
+            <div class="campo-rotina__dias">
+                ${raw(medicos.DIAS_ROTINA.map(({ dia, curto, nome }) => html`
+                    <label class="campo-rotina__dia" title="${nome}">
+                        <input type="checkbox" name="rotina" value="${dia}"${raw(selecionados.includes(dia) ? ' checked' : '')}>
+                        <span>${curto}</span>
+                    </label>
+                `).join(''))}
+            </div>
+            <span class="campo__ajuda">Opcional — o médico aparece nesses dias na visão Rotina da Agenda.</span>
+        </fieldset>
+    `;
+}
+
 function corpoFormulario(medico) {
     const endereco = medico.endereco || {};
 
@@ -184,6 +205,8 @@ function corpoFormulario(medico) {
                     placeholder: 'Seg e Qua (08h-12h), Sex (14h-18h)',
                     linhas: 2
                 }))}
+
+                ${raw(campoRotina(medicos.normalizarRotina(medico.rotina)))}
             </div>
 
             <div class="form__acoes">
@@ -251,7 +274,10 @@ function abrirFormularioMedico(medicoExistente = null) {
                     e.preventDefault();
                     limparErros(form);
 
-                    const dados = medicos.montarDoFormulario(lerFormulario(form));
+                    const dados = medicos.montarDoFormulario({
+                        ...lerFormulario(form),
+                        rotina: [...form.querySelectorAll('[name="rotina"]:checked')].map(c => c.value)
+                    });
                     const erros = medicos.validar(dados);
 
                     if (Object.keys(erros).length) {
